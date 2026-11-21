@@ -11,6 +11,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Code2, Loader2, Save, AlertTriangle, X, Sparkles, BookOpen, Undo2 } from "lucide-react";
 import api, { fehlerText } from "../api/client";
+import TabellenSuche from "../components/baukasten/TabellenSuche";
 import { useProject } from "../context/ProjectContext";
 import {
   ART, OPS, OHNE_WERT, PROFI_FARBE, Stein, Nutzlast, liste, kindKey, blockId, simuliere, alleStellen, platzFuer, gueltig,
@@ -74,6 +75,15 @@ const CSS = `
 .bk-chip, .bk-oval, .bk-op { background: rgba(255,255,255,.94); color: #1b1f1d; border: 0; height: 27px; padding: 0 6px; font-size: 12.5px; cursor: pointer; }
 .bk-chip { border-radius: 3px; border-left: 5px solid #1b1f1d55; font-weight: 600; max-width: 220px; }
 .bk-chip.breit { max-width: 320px; min-width: 200px; }
+.bk-suche { position: relative; display: inline-block; }
+.bk-suche input { cursor: text; width: 300px; }
+.bk-suche-liste { position: absolute; left: 0; top: 30px; z-index: 50; min-width: 320px; max-width: 460px; max-height: 300px; overflow: auto;
+  margin: 0; padding: 4px 0; list-style: none; background: var(--bg-card); color: var(--text-main);
+  border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 8px 24px rgba(0,0,0,.22); font-size: 12.5px; font-weight: 500; }
+.bk-suche-liste li { display: flex; justify-content: space-between; gap: 12px; padding: 5px 10px; cursor: pointer; white-space: nowrap; }
+.bk-suche-liste li span { opacity: .55; font-size: 11px; }
+.bk-suche-liste li.aktiv { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.bk-suche-liste li.leer { cursor: default; opacity: .65; font-style: italic; }
 .bk-oval { border-radius: 999px; padding: 0 11px; width: 110px; cursor: text; }
 .bk-oval.kurz { width: 62px; }
 .bk-oval.leer { box-shadow: inset 0 0 0 2px #f0994f; }
@@ -283,13 +293,8 @@ export default function Baukasten() {
       {!werte.includes(akt) && akt ? <option value={akt}>{akt} (fehlt)</option> : null}
       {werte.map((w) => <option key={w} value={w}>{w}</option>)}
     </select>);
-  const tabWahl = (akt: string, onChange: (v: string) => void, listeId: string) => (
-    <>
-      <input className="bk-chip breit" list={listeId} defaultValue={akt} key={akt} placeholder={tabellen ? `Tabelle suchen (${nf.format(tabellen.length)}) …` : "Tabellen laden …"}
-        onClick={(e) => e.stopPropagation()}
-        onChange={(e) => { if (tabSpalten[e.target.value]) onChange(e.target.value); }} aria-label="Tabelle" />
-      <datalist id={listeId}>{(tabellen || []).map((t) => <option key={t.name} value={t.name} />)}</datalist>
-    </>);
+  const tabWahl = (akt: string, onChange: (v: string) => void, _listeId?: string) => (
+    <TabellenSuche tabellen={tabellen} wert={akt} onWahl={onChange} />);
   const weg = (key: string, i: number) => <button className="bk-x" title="Stein entfernen" aria-label="Stein entfernen" onClick={(e) => { e.stopPropagation(); entfernen(key, i); }}>×</button>;
   const warnung = (bid: string) => warn[bid] ? <div className="bk-warn"><AlertTriangle size={13} style={{ flex: "none", marginTop: 1 }} />{warn[bid]}</div> : null;
 
