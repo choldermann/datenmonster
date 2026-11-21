@@ -1,0 +1,807 @@
+{
+  "format_version": "1.0",
+  "template_id": "markt_verpackung_grosshandel",
+  "template_name": "Marktlage Verpackung & Großhandel",
+  "description": "Rohstoff- und Einkaufspreise für Papier-, Kunststoff- und Aluminiumverpackungen, Verkaufspreise im Großhandel, Nachfrage in Groß- und Einzelhandel, Wechselkurse, Transportkosten und Insolvenzen in Handel und Herstellung – aus amtlichen Quellen, monatlich aktuell, ohne eigenes Konto.",
+  "category": "marktdaten",
+  "version": "1.0",
+  "author": "Datenmonster",
+  "hinweise": [
+    "Voraussetzung: Datenmonster ab Stand 20.11.2026 (Quelle „Umfelddaten“) und eine aktive Lizenz – es wird keine Datenbankverbindung gebraucht.",
+    "Beim allerersten Öffnen holt der Datendienst manche Reihen erst von der Quelle; dann nach einer Minute erneut laden.",
+    "Die Reihen lassen sich im Dataset „Marktlage Verpackung & Großhandel – Reihen“ erweitern (Werkstatt › Datasets) oder als Mapping-Quelle mit eigenen Zahlen verknüpfen.",
+    "Quellen: Destatis (Datenlizenz Deutschland – Namensnennung 2.0), Eurostat (Wiederverwendung mit Quellenangabe), EZB, EU-Kommission (Weekly Oil Bulletin, CC BY 4.0), DWD (CC BY 4.0). Die Quellenangabe gehört bei Weitergabe der Zahlen dazu."
+  ],
+  "config_required": [],
+  "datasets": [
+    {
+      "id": "ds_reihen",
+      "name": "Marktlage Verpackung & Großhandel – Reihen",
+      "file_type": "umfeld",
+      "columns": [
+        "Groesse",
+        "Bezeichnung",
+        "Region",
+        "Regionname",
+        "Periode",
+        "Datum",
+        "Jahr",
+        "Monat",
+        "Wert",
+        "Einheit",
+        "Quelle",
+        "Stand"
+      ],
+      "query_config": {
+        "auswahl": [
+          {
+            "groesse": "erzeugerpreise",
+            "regionen": [
+              "GP19-1711",
+              "GP19-17123",
+              "GP19-383232",
+              "GP19-2016",
+              "GP19-1721",
+              "GP19-172113",
+              "GP19-2222",
+              "GP19-22213",
+              "GP19-244225"
+            ]
+          },
+          {
+            "groesse": "preise_grosshandel",
+            "regionen": [
+              "WZ08-464",
+              "WZ08-46494",
+              "WZ08-4676"
+            ]
+          },
+          {
+            "groesse": "umsatz_handel_real",
+            "regionen": [
+              "G46",
+              "G464",
+              "G47_X_G473"
+            ]
+          },
+          {
+            "groesse": "wechselkurse",
+            "regionen": [
+              "USD",
+              "CNY"
+            ]
+          },
+          {
+            "groesse": "kraftstoff",
+            "regionen": [
+              "Diesel"
+            ]
+          },
+          {
+            "groesse": "insolvenzen",
+            "regionen": [
+              "WZ08-46",
+              "WZ08-47",
+              "WZ08-17",
+              "WZ08-22"
+            ]
+          },
+          {
+            "groesse": "stimmung",
+            "regionen": [
+              "BS-ICI-BAL",
+              "BS-ESI-I"
+            ]
+          }
+        ],
+        "monate": 72,
+        "format": "lang"
+      }
+    }
+  ],
+  "mappings": [
+    {
+      "id": "m_lage",
+      "name": "Marktlage Verpackung & Großhandel – Lage",
+      "canvas_nodes": [
+        {
+          "id": "n_reihen",
+          "dataset_id": "ds_reihen",
+          "dataset_name": "reihen",
+          "x": 40,
+          "y": 40,
+          "filters": {}
+        }
+      ],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 380,
+          "y": 40,
+          "width": 350,
+          "height": 244,
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Thema",
+            "Reihe",
+            "Einheit",
+            "Stand",
+            "Aktuell",
+            "Vorjahr",
+            "Veränderung",
+            "Veränderung %",
+            "Quelle",
+            "Ziel"
+          ],
+          "sql": "WITH k(g, r, Reihe, Thema, Sort, Pct, Ziel) AS (VALUES\n    ('erzeugerpreise', 'GP19-1711', 'Holz- & Zellstoff', 'Rohstoffe', 1, 1, 'erzeugerpreise'),\n    ('erzeugerpreise', 'GP19-17123', 'Wellpappenrohpapier', 'Rohstoffe', 2, 1, 'erzeugerpreise'),\n    ('erzeugerpreise', 'GP19-383232', 'Altpapier (Sekundärrohstoff)', 'Rohstoffe', 3, 1, 'erzeugerpreise'),\n    ('erzeugerpreise', 'GP19-2016', 'Kunststoffe in Primärformen', 'Rohstoffe', 4, 1, 'erzeugerpreise'),\n    ('erzeugerpreise', 'GP19-1721', 'Wellpappe-Verpackungen', 'Einkaufspreise Verpackung', 5, 1, 'erzeugerpreise'),\n    ('erzeugerpreise', 'GP19-172113', 'Kartons aus Wellpappe', 'Einkaufspreise Verpackung', 6, 1, 'erzeugerpreise'),\n    ('erzeugerpreise', 'GP19-2222', 'Kunststoffverpackungen', 'Einkaufspreise Verpackung', 7, 1, 'erzeugerpreise'),\n    ('erzeugerpreise', 'GP19-22213', 'Kunststofffolien & -platten', 'Einkaufspreise Verpackung', 8, 1, 'erzeugerpreise'),\n    ('erzeugerpreise', 'GP19-244225', 'Alufolie & dünne Aluminiumbänder', 'Einkaufspreise Verpackung', 9, 1, 'erzeugerpreise'),\n    ('preise_grosshandel', 'WZ08-464', 'Großhandel Gebrauchs- & Verbrauchsgüter', 'Verkaufspreise', 10, 1, 'branchenvergleich'),\n    ('preise_grosshandel', 'WZ08-46494', 'Großhandel Papier & Pappe', 'Verkaufspreise', 11, 1, 'branchenvergleich'),\n    ('preise_grosshandel', 'WZ08-4676', 'Großhandel sonstige Halbwaren', 'Verkaufspreise', 12, 1, 'branchenvergleich'),\n    ('umsatz_handel_real', 'G46', 'Umsatz Großhandel insgesamt (real)', 'Nachfrage', 13, 1, 'branchenvergleich'),\n    ('umsatz_handel_real', 'G464', 'Umsatz Großhandel Gebrauchs- & Verbrauchsgüter (real)', 'Nachfrage', 14, 1, 'branchenvergleich'),\n    ('umsatz_handel_real', 'G47_X_G473', 'Umsatz Einzelhandel (real)', 'Nachfrage', 15, 1, 'branchenvergleich'),\n    ('wechselkurse', 'USD', 'US-Dollar je Euro', 'Wechselkurse & Transport', 16, 1, 'waehrungen'),\n    ('wechselkurse', 'CNY', 'Chinesische Yuan je Euro', 'Wechselkurse & Transport', 17, 1, 'waehrungen'),\n    ('kraftstoff', 'Diesel', 'Diesel (€/l)', 'Wechselkurse & Transport', 18, 1, 'energie'),\n    ('insolvenzen', 'WZ08-46', 'Insolvenzen Großhandel', 'Insolvenzen', 19, 1, 'insolvenzen'),\n    ('insolvenzen', 'WZ08-47', 'Insolvenzen Einzelhandel', 'Insolvenzen', 20, 1, 'insolvenzen'),\n    ('insolvenzen', 'WZ08-17', 'Insolvenzen Papier- & Pappeherstellung', 'Insolvenzen', 21, 1, 'insolvenzen'),\n    ('insolvenzen', 'WZ08-22', 'Insolvenzen Kunststoffwaren', 'Insolvenzen', 22, 1, 'insolvenzen'),\n    ('stimmung', 'BS-ICI-BAL', 'Industrie-Vertrauen (Saldo)', 'Stimmung', 23, 0, 'stimmung'),\n    ('stimmung', 'BS-ESI-I', 'Wirtschaftsklima (ESI, Ø = 100)', 'Stimmung', 24, 0, 'stimmung')\n), s AS (\n    SELECT Groesse, Region, MAX(Periode) AS p FROM reihen WHERE Wert IS NOT NULL GROUP BY Groesse, Region\n)\nSELECT k.Thema, k.Reihe, a.Einheit,\n    substr(a.Periode, 6, 2) || '/' || substr(a.Periode, 1, 4) AS Stand,\n    ROUND(a.Wert, 2) AS Aktuell,\n    ROUND(v.Wert, 2) AS Vorjahr,\n    ROUND(a.Wert - v.Wert, 2) AS \"Veränderung\",\n    CASE WHEN k.Pct = 1 AND v.Wert <> 0 THEN ROUND(100.0 * (a.Wert - v.Wert) / v.Wert, 1) END AS \"Veränderung %\",\n    a.Quelle,\n    k.Ziel\nFROM k\nJOIN s ON s.Groesse = k.g AND s.Region = k.r\nJOIN reihen a ON a.Groesse = s.Groesse AND a.Region = s.Region AND a.Periode = s.p\nLEFT JOIN reihen v ON v.Groesse = a.Groesse AND v.Region = a.Region\n    AND v.Periode = (CAST(substr(a.Periode, 1, 4) AS INTEGER) - 1) || substr(a.Periode, 5)\nORDER BY k.Sort"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Marktlage Verpackung & Großhandel – Lage",
+          "target_type": "xlsx",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Thema",
+              "target_field": "Thema",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Thema"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Reihe",
+              "target_field": "Reihe",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Reihe"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Einheit",
+              "target_field": "Einheit",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Einheit"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Stand",
+              "target_field": "Stand",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Stand"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Aktuell",
+              "target_field": "Aktuell",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Aktuell"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Vorjahr",
+              "target_field": "Vorjahr",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Vorjahr"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Veränderung",
+              "target_field": "Veränderung",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Veränderung"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Veränderung %",
+              "target_field": "Veränderung %",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Veränderung %"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Quelle",
+              "target_field": "Quelle",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Quelle"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Ziel",
+              "target_field": "Ziel",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Ziel"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_verlauf",
+      "name": "Marktlage Verpackung & Großhandel – Verlauf",
+      "canvas_nodes": [
+        {
+          "id": "n_reihen",
+          "dataset_id": "ds_reihen",
+          "dataset_name": "reihen",
+          "x": 40,
+          "y": 40,
+          "filters": {}
+        }
+      ],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 380,
+          "y": 40,
+          "width": 350,
+          "height": 244,
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Periode",
+            "Holz- & Zellstoff",
+            "Wellpappenrohpapier",
+            "Altpapier (Sekundärrohstoff)",
+            "Kunststoffe in Primärformen",
+            "Wellpappe-Verpackungen",
+            "Kartons aus Wellpappe",
+            "Kunststoffverpackungen",
+            "Kunststofffolien & -platten",
+            "Alufolie & dünne Aluminiumbänder",
+            "Großhandel Gebrauchs- & Verbrauchsgüter",
+            "Großhandel Papier & Pappe",
+            "Großhandel sonstige Halbwaren",
+            "Umsatz Großhandel insgesamt (real)",
+            "Umsatz Großhandel Gebrauchs- & Verbrauchsgüter (real)",
+            "Umsatz Einzelhandel (real)",
+            "US-Dollar je Euro",
+            "Chinesische Yuan je Euro",
+            "Diesel (€/l)",
+            "Insolvenzen Großhandel",
+            "Insolvenzen Einzelhandel",
+            "Insolvenzen Papier- & Pappeherstellung",
+            "Insolvenzen Kunststoffwaren",
+            "Industrie-Vertrauen (Saldo)",
+            "Wirtschaftsklima (ESI, Ø = 100)"
+          ],
+          "sql": "SELECT Periode,\n    MAX(CASE WHEN Groesse = 'erzeugerpreise' AND Region = 'GP19-1711' THEN Wert END) AS \"Holz- & Zellstoff\",\n    MAX(CASE WHEN Groesse = 'erzeugerpreise' AND Region = 'GP19-17123' THEN Wert END) AS \"Wellpappenrohpapier\",\n    MAX(CASE WHEN Groesse = 'erzeugerpreise' AND Region = 'GP19-383232' THEN Wert END) AS \"Altpapier (Sekundärrohstoff)\",\n    MAX(CASE WHEN Groesse = 'erzeugerpreise' AND Region = 'GP19-2016' THEN Wert END) AS \"Kunststoffe in Primärformen\",\n    MAX(CASE WHEN Groesse = 'erzeugerpreise' AND Region = 'GP19-1721' THEN Wert END) AS \"Wellpappe-Verpackungen\",\n    MAX(CASE WHEN Groesse = 'erzeugerpreise' AND Region = 'GP19-172113' THEN Wert END) AS \"Kartons aus Wellpappe\",\n    MAX(CASE WHEN Groesse = 'erzeugerpreise' AND Region = 'GP19-2222' THEN Wert END) AS \"Kunststoffverpackungen\",\n    MAX(CASE WHEN Groesse = 'erzeugerpreise' AND Region = 'GP19-22213' THEN Wert END) AS \"Kunststofffolien & -platten\",\n    MAX(CASE WHEN Groesse = 'erzeugerpreise' AND Region = 'GP19-244225' THEN Wert END) AS \"Alufolie & dünne Aluminiumbänder\",\n    MAX(CASE WHEN Groesse = 'preise_grosshandel' AND Region = 'WZ08-464' THEN Wert END) AS \"Großhandel Gebrauchs- & Verbrauchsgüter\",\n    MAX(CASE WHEN Groesse = 'preise_grosshandel' AND Region = 'WZ08-46494' THEN Wert END) AS \"Großhandel Papier & Pappe\",\n    MAX(CASE WHEN Groesse = 'preise_grosshandel' AND Region = 'WZ08-4676' THEN Wert END) AS \"Großhandel sonstige Halbwaren\",\n    MAX(CASE WHEN Groesse = 'umsatz_handel_real' AND Region = 'G46' THEN Wert END) AS \"Umsatz Großhandel insgesamt (real)\",\n    MAX(CASE WHEN Groesse = 'umsatz_handel_real' AND Region = 'G464' THEN Wert END) AS \"Umsatz Großhandel Gebrauchs- & Verbrauchsgüter (real)\",\n    MAX(CASE WHEN Groesse = 'umsatz_handel_real' AND Region = 'G47_X_G473' THEN Wert END) AS \"Umsatz Einzelhandel (real)\",\n    MAX(CASE WHEN Groesse = 'wechselkurse' AND Region = 'USD' THEN Wert END) AS \"US-Dollar je Euro\",\n    MAX(CASE WHEN Groesse = 'wechselkurse' AND Region = 'CNY' THEN Wert END) AS \"Chinesische Yuan je Euro\",\n    MAX(CASE WHEN Groesse = 'kraftstoff' AND Region = 'Diesel' THEN Wert END) AS \"Diesel (€/l)\",\n    MAX(CASE WHEN Groesse = 'insolvenzen' AND Region = 'WZ08-46' THEN Wert END) AS \"Insolvenzen Großhandel\",\n    MAX(CASE WHEN Groesse = 'insolvenzen' AND Region = 'WZ08-47' THEN Wert END) AS \"Insolvenzen Einzelhandel\",\n    MAX(CASE WHEN Groesse = 'insolvenzen' AND Region = 'WZ08-17' THEN Wert END) AS \"Insolvenzen Papier- & Pappeherstellung\",\n    MAX(CASE WHEN Groesse = 'insolvenzen' AND Region = 'WZ08-22' THEN Wert END) AS \"Insolvenzen Kunststoffwaren\",\n    MAX(CASE WHEN Groesse = 'stimmung' AND Region = 'BS-ICI-BAL' THEN Wert END) AS \"Industrie-Vertrauen (Saldo)\",\n    MAX(CASE WHEN Groesse = 'stimmung' AND Region = 'BS-ESI-I' THEN Wert END) AS \"Wirtschaftsklima (ESI, Ø = 100)\"\nFROM reihen\nGROUP BY Periode\nORDER BY Periode"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Marktlage Verpackung & Großhandel – Verlauf",
+          "target_type": "xlsx",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Periode",
+              "target_field": "Periode",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Periode"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Holz- & Zellstoff",
+              "target_field": "Holz- & Zellstoff",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Holz- & Zellstoff"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Wellpappenrohpapier",
+              "target_field": "Wellpappenrohpapier",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Wellpappenrohpapier"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Altpapier (Sekundärrohstoff)",
+              "target_field": "Altpapier (Sekundärrohstoff)",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Altpapier (Sekundärrohstoff)"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Kunststoffe in Primärformen",
+              "target_field": "Kunststoffe in Primärformen",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunststoffe in Primärformen"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Wellpappe-Verpackungen",
+              "target_field": "Wellpappe-Verpackungen",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Wellpappe-Verpackungen"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Kartons aus Wellpappe",
+              "target_field": "Kartons aus Wellpappe",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kartons aus Wellpappe"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Kunststoffverpackungen",
+              "target_field": "Kunststoffverpackungen",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunststoffverpackungen"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Kunststofffolien & -platten",
+              "target_field": "Kunststofffolien & -platten",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunststofffolien & -platten"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Alufolie & dünne Aluminiumbänder",
+              "target_field": "Alufolie & dünne Aluminiumbänder",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Alufolie & dünne Aluminiumbänder"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Großhandel Gebrauchs- & Verbrauchsgüter",
+              "target_field": "Großhandel Gebrauchs- & Verbrauchsgüter",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Großhandel Gebrauchs- & Verbrauchsgüter"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Großhandel Papier & Pappe",
+              "target_field": "Großhandel Papier & Pappe",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Großhandel Papier & Pappe"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Großhandel sonstige Halbwaren",
+              "target_field": "Großhandel sonstige Halbwaren",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Großhandel sonstige Halbwaren"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Umsatz Großhandel insgesamt (real)",
+              "target_field": "Umsatz Großhandel insgesamt (real)",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz Großhandel insgesamt (real)"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Umsatz Großhandel Gebrauchs- & Verbrauchsgüter (real)",
+              "target_field": "Umsatz Großhandel Gebrauchs- & Verbrauchsgüter (real)",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz Großhandel Gebrauchs- & Verbrauchsgüter (real)"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Umsatz Einzelhandel (real)",
+              "target_field": "Umsatz Einzelhandel (real)",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz Einzelhandel (real)"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "US-Dollar je Euro",
+              "target_field": "US-Dollar je Euro",
+              "transformer": {
+                "type": "direct",
+                "source_field": "US-Dollar je Euro"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Chinesische Yuan je Euro",
+              "target_field": "Chinesische Yuan je Euro",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Chinesische Yuan je Euro"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Diesel (€/l)",
+              "target_field": "Diesel (€/l)",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Diesel (€/l)"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Insolvenzen Großhandel",
+              "target_field": "Insolvenzen Großhandel",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Insolvenzen Großhandel"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Insolvenzen Einzelhandel",
+              "target_field": "Insolvenzen Einzelhandel",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Insolvenzen Einzelhandel"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Insolvenzen Papier- & Pappeherstellung",
+              "target_field": "Insolvenzen Papier- & Pappeherstellung",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Insolvenzen Papier- & Pappeherstellung"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Insolvenzen Kunststoffwaren",
+              "target_field": "Insolvenzen Kunststoffwaren",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Insolvenzen Kunststoffwaren"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Industrie-Vertrauen (Saldo)",
+              "target_field": "Industrie-Vertrauen (Saldo)",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Industrie-Vertrauen (Saldo)"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Wirtschaftsklima (ESI, Ø = 100)",
+              "target_field": "Wirtschaftsklima (ESI, Ø = 100)",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Wirtschaftsklima (ESI, Ø = 100)"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "pipelines": [],
+  "forms": [
+    {
+      "name": "Marktlage Verpackung & Großhandel",
+      "portal_config": {
+        "icon": "🌍"
+      },
+      "schema": {
+        "fields": [],
+        "layout": [],
+        "result_tabs": [],
+        "show_ai_assistant": false,
+        "rubrik": {
+          "id": "markt"
+        },
+        "actions": [
+          {
+            "id": "act_lage",
+            "type": "run_mapping",
+            "mapping_id": "m_lage",
+            "pipeline_id": null,
+            "label": "Lage"
+          },
+          {
+            "id": "act_verlauf",
+            "type": "run_mapping",
+            "mapping_id": "m_verlauf",
+            "pipeline_id": null,
+            "label": "Verlauf"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "w_lage",
+            "type": "table",
+            "label": "Lage auf einen Blick: letzter Wert gegen denselben Monat im Vorjahr",
+            "action_id": "act_lage",
+            "config": {
+              "width": 12,
+              "full_rows": true,
+              "hidden_columns": [
+                "Quelle",
+                "Ziel"
+              ],
+              "sprung": {
+                "spalte": "Ziel",
+                "titel": "Mit eigenen Zahlen im Cockpit"
+              }
+            }
+          },
+          {
+            "id": "w_verlauf_1",
+            "type": "line",
+            "label": "Rohstoffe",
+            "action_id": "act_verlauf",
+            "config": {
+              "width": 6,
+              "x_column": "Periode",
+              "y_columns": [
+                "Holz- & Zellstoff",
+                "Wellpappenrohpapier",
+                "Altpapier (Sekundärrohstoff)",
+                "Kunststoffe in Primärformen"
+              ],
+              "curved": true,
+              "full_rows": true,
+              "luecken": true,
+              "markt": false
+            }
+          },
+          {
+            "id": "w_verlauf_2",
+            "type": "line",
+            "label": "Einkaufspreise Verpackung",
+            "action_id": "act_verlauf",
+            "config": {
+              "width": 6,
+              "x_column": "Periode",
+              "y_columns": [
+                "Wellpappe-Verpackungen",
+                "Kartons aus Wellpappe",
+                "Kunststoffverpackungen",
+                "Kunststofffolien & -platten",
+                "Alufolie & dünne Aluminiumbänder"
+              ],
+              "curved": true,
+              "full_rows": true,
+              "luecken": true,
+              "markt": false
+            }
+          },
+          {
+            "id": "w_verlauf_3",
+            "type": "line",
+            "label": "Verkaufspreise",
+            "action_id": "act_verlauf",
+            "config": {
+              "width": 6,
+              "x_column": "Periode",
+              "y_columns": [
+                "Großhandel Gebrauchs- & Verbrauchsgüter",
+                "Großhandel Papier & Pappe",
+                "Großhandel sonstige Halbwaren"
+              ],
+              "curved": true,
+              "full_rows": true,
+              "luecken": true,
+              "markt": false
+            }
+          },
+          {
+            "id": "w_verlauf_4",
+            "type": "line",
+            "label": "Nachfrage",
+            "action_id": "act_verlauf",
+            "config": {
+              "width": 6,
+              "x_column": "Periode",
+              "y_columns": [
+                "Umsatz Großhandel insgesamt (real)",
+                "Umsatz Großhandel Gebrauchs- & Verbrauchsgüter (real)",
+                "Umsatz Einzelhandel (real)"
+              ],
+              "curved": true,
+              "full_rows": true,
+              "luecken": true,
+              "markt": false
+            }
+          },
+          {
+            "id": "w_verlauf_5",
+            "type": "line",
+            "label": "Wechselkurse & Transport",
+            "action_id": "act_verlauf",
+            "config": {
+              "width": 6,
+              "x_column": "Periode",
+              "y_columns": [
+                "US-Dollar je Euro",
+                "Chinesische Yuan je Euro",
+                "Diesel (€/l)"
+              ],
+              "curved": true,
+              "full_rows": true,
+              "luecken": true,
+              "markt": false
+            }
+          },
+          {
+            "id": "w_verlauf_6",
+            "type": "line",
+            "label": "Insolvenzen",
+            "action_id": "act_verlauf",
+            "config": {
+              "width": 6,
+              "x_column": "Periode",
+              "y_columns": [
+                "Insolvenzen Großhandel",
+                "Insolvenzen Einzelhandel",
+                "Insolvenzen Papier- & Pappeherstellung",
+                "Insolvenzen Kunststoffwaren"
+              ],
+              "curved": true,
+              "full_rows": true,
+              "luecken": true,
+              "markt": false
+            }
+          },
+          {
+            "id": "w_verlauf_7",
+            "type": "line",
+            "label": "Stimmung",
+            "action_id": "act_verlauf",
+            "config": {
+              "width": 6,
+              "x_column": "Periode",
+              "y_columns": [
+                "Industrie-Vertrauen (Saldo)",
+                "Wirtschaftsklima (ESI, Ø = 100)"
+              ],
+              "curved": true,
+              "full_rows": true,
+              "luecken": true,
+              "markt": false
+            }
+          },
+          {
+            "id": "w_profil",
+            "type": "branchenprofil",
+            "label": "Mit Ihren Cockpits verknüpfen",
+            "config": {
+              "width": 12,
+              "profil": {
+                "preisindex": {
+                  "key": "preise_grosshandel",
+                  "region": "WZ08-464",
+                  "label": "Großhandel: Großh.m. Gebrauchs- und Verbrauchsgütern"
+                },
+                "branche": {
+                  "code": "G464",
+                  "label": "Großhandel mit Gebrauchs- und Verbrauchsgütern"
+                },
+                "kundenbranchen": [
+                  {
+                    "code": "WZ08-47",
+                    "label": "Einzelhandel (ohne Handel mit Kraftfahrzeugen)"
+                  },
+                  {
+                    "code": "WZ08-10",
+                    "label": "Herstellung von Nahrungs- und Futtermitteln"
+                  },
+                  {
+                    "code": "WZ08-56",
+                    "label": "Gastronomie"
+                  }
+                ],
+                "erzeugerpreise": [
+                  {
+                    "code": "GP19-1721",
+                    "label": "Wellpapier und -pappe, Verpackungsmittel"
+                  },
+                  {
+                    "code": "GP19-2222",
+                    "label": "Verpackungsmittel aus Kunststoffen"
+                  },
+                  {
+                    "code": "GP19-2016",
+                    "label": "Kunststoffe, in Primärformen"
+                  },
+                  {
+                    "code": "GP19-1711",
+                    "label": "Holz- und Zellstoff"
+                  }
+                ]
+              }
+            }
+          }
+        ],
+        "doku": {
+          "intro": "Rohstoff- und Einkaufspreise für Papier-, Kunststoff- und Aluminiumverpackungen, Verkaufspreise im Großhandel, Nachfrage in Groß- und Einzelhandel, Wechselkurse, Transportkosten und Insolvenzen in Handel und Herstellung – aus amtlichen Quellen, monatlich aktuell, ohne eigenes Konto. Die Tabelle zeigt je Reihe den jüngsten verfügbaren Monat gegen denselben Monat im Vorjahr, darunter der Verlauf der letzten sechs Jahre je Thema.",
+          "hinweise": [
+            "Amtliche Zahlen erscheinen mit Verzug: Preise und Umsätze meist nach 4–8 Wochen, Insolvenzen nach etwa 3 Monaten. „Stand“ nennt den Monat des jeweils letzten Werts.",
+            "Preisindizes und Umsatzindizes: 2021 = 100. Stimmung: Wirtschaftsklima mit langjährigem Durchschnitt = 100, Vertrauensindikatoren als Saldo (positiv = mehr Optimisten) – dort keine Prozentveränderung.",
+            "Insolvenzen: beantragte Verfahren je Monat; einzelne Monate schwanken stark, der Verlauf ist aussagekräftiger.",
+            "Quellen: Destatis (Datenlizenz Deutschland – Namensnennung 2.0), Eurostat (Wiederverwendung mit Quellenangabe), EZB, EU-Kommission (Weekly Oil Bulletin, CC BY 4.0), DWD (CC BY 4.0)."
+          ]
+        }
+      }
+    }
+  ],
+  "alert_rules": [],
+  "reports": [],
+  "knowledge": []
+}

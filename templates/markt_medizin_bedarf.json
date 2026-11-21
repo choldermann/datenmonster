@@ -1,0 +1,723 @@
+{
+  "format_version": "1.0",
+  "template_id": "markt_medizin_bedarf",
+  "template_name": "Marktlage Medizin- & Praxisbedarf",
+  "description": "Einkaufspreise für Medizinprodukte, Verbrauchsmaterial, Desinfektion und Arzneimittel, Verkaufspreise im medizinischen Großhandel, Nachfrage, Transportkosten und Insolvenzen bei Praxen, Kliniken und Pflegeheimen – aus amtlichen Quellen, monatlich aktuell, ohne eigenes Konto.",
+  "category": "marktdaten",
+  "version": "1.0",
+  "author": "Datenmonster",
+  "hinweise": [
+    "Voraussetzung: Datenmonster ab Stand 20.11.2026 (Quelle „Umfelddaten“) und eine aktive Lizenz – es wird keine Datenbankverbindung gebraucht.",
+    "Beim allerersten Öffnen holt der Datendienst manche Reihen erst von der Quelle; dann nach einer Minute erneut laden.",
+    "Die Reihen lassen sich im Dataset „Marktlage Medizin- & Praxisbedarf – Reihen“ erweitern (Werkstatt › Datasets) oder als Mapping-Quelle mit eigenen Zahlen verknüpfen.",
+    "Quellen: Destatis (Datenlizenz Deutschland – Namensnennung 2.0), Eurostat (Wiederverwendung mit Quellenangabe), EZB, EU-Kommission (Weekly Oil Bulletin, CC BY 4.0), DWD (CC BY 4.0). Die Quellenangabe gehört bei Weitergabe der Zahlen dazu."
+  ],
+  "config_required": [],
+  "datasets": [
+    {
+      "id": "ds_reihen",
+      "name": "Marktlage Medizin- & Praxisbedarf – Reihen",
+      "file_type": "umfeld",
+      "columns": [
+        "Groesse",
+        "Bezeichnung",
+        "Region",
+        "Regionname",
+        "Periode",
+        "Datum",
+        "Jahr",
+        "Monat",
+        "Wert",
+        "Einheit",
+        "Quelle",
+        "Stand"
+      ],
+      "query_config": {
+        "auswahl": [
+          {
+            "groesse": "erzeugerpreise",
+            "regionen": [
+              "GP19-325",
+              "GP19-325013",
+              "GP19-325050",
+              "GP19-2120",
+              "GP19-202014",
+              "GP19-329911",
+              "GP19-172211"
+            ]
+          },
+          {
+            "groesse": "preise_grosshandel",
+            "regionen": [
+              "WZ08-46462",
+              "WZ08-46461"
+            ]
+          },
+          {
+            "groesse": "preise_verbraucher",
+            "regionen": [
+              "Deutschland"
+            ]
+          },
+          {
+            "groesse": "umsatz_handel_real",
+            "regionen": [
+              "G464"
+            ]
+          },
+          {
+            "groesse": "kraftstoff",
+            "regionen": [
+              "Diesel"
+            ]
+          },
+          {
+            "groesse": "insolvenzen",
+            "regionen": [
+              "WZ08-862",
+              "WZ08-861",
+              "WZ08-871",
+              "WZ08-75"
+            ]
+          },
+          {
+            "groesse": "stimmung",
+            "regionen": [
+              "BS-SCI-BAL",
+              "BS-ESI-I"
+            ]
+          }
+        ],
+        "monate": 72,
+        "format": "lang"
+      }
+    }
+  ],
+  "mappings": [
+    {
+      "id": "m_lage",
+      "name": "Marktlage Medizin- & Praxisbedarf – Lage",
+      "canvas_nodes": [
+        {
+          "id": "n_reihen",
+          "dataset_id": "ds_reihen",
+          "dataset_name": "reihen",
+          "x": 40,
+          "y": 40,
+          "filters": {}
+        }
+      ],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 380,
+          "y": 40,
+          "width": 350,
+          "height": 244,
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Thema",
+            "Reihe",
+            "Einheit",
+            "Stand",
+            "Aktuell",
+            "Vorjahr",
+            "Veränderung",
+            "Veränderung %",
+            "Quelle",
+            "Ziel"
+          ],
+          "sql": "WITH k(g, r, Reihe, Thema, Sort, Pct, Ziel) AS (VALUES\n    ('erzeugerpreise', 'GP19-325', 'Medizinische & zahnmed. Apparate und Materialien', 'Einkaufspreise der Hersteller', 1, 1, 'erzeugerpreise'),\n    ('erzeugerpreise', 'GP19-325013', 'Spritzen, Kanülen, Katheter', 'Einkaufspreise der Hersteller', 2, 1, 'erzeugerpreise'),\n    ('erzeugerpreise', 'GP19-325050', 'Andere Waren für medizinische Zwecke', 'Einkaufspreise der Hersteller', 3, 1, 'erzeugerpreise'),\n    ('erzeugerpreise', 'GP19-2120', 'Arzneimittel (pharmazeutische Spezialitäten)', 'Einkaufspreise der Hersteller', 4, 1, 'erzeugerpreise'),\n    ('erzeugerpreise', 'GP19-202014', 'Desinfektionsmittel', 'Einkaufspreise der Hersteller', 5, 1, 'erzeugerpreise'),\n    ('erzeugerpreise', 'GP19-329911', 'Schutzhandschuhe & -kopfbedeckungen', 'Einkaufspreise der Hersteller', 6, 1, 'erzeugerpreise'),\n    ('erzeugerpreise', 'GP19-172211', 'Hygienepapier (Toilettenpapier, Handtücher)', 'Einkaufspreise der Hersteller', 7, 1, 'erzeugerpreise'),\n    ('preise_grosshandel', 'WZ08-46462', 'Großhandel Medizin-, Dental- & Laborbedarf', 'Verkaufspreise', 8, 1, 'branchenvergleich'),\n    ('preise_grosshandel', 'WZ08-46461', 'Großhandel Arzneimittel', 'Verkaufspreise', 9, 1, 'branchenvergleich'),\n    ('preise_verbraucher', 'Deutschland', 'Verbraucherpreise insgesamt', 'Verkaufspreise', 10, 1, 'branchenvergleich'),\n    ('umsatz_handel_real', 'G464', 'Umsatz Großhandel Gebrauchs- & Verbrauchsgüter (real)', 'Nachfrage', 11, 1, 'branchenvergleich'),\n    ('kraftstoff', 'Diesel', 'Diesel (€/l)', 'Transportkosten', 12, 1, 'energie'),\n    ('insolvenzen', 'WZ08-862', 'Insolvenzen Arzt- & Zahnarztpraxen', 'Insolvenzen der Kundenbranchen', 13, 1, 'insolvenzen'),\n    ('insolvenzen', 'WZ08-861', 'Insolvenzen Krankenhäuser', 'Insolvenzen der Kundenbranchen', 14, 1, 'insolvenzen'),\n    ('insolvenzen', 'WZ08-871', 'Insolvenzen Pflegeheime', 'Insolvenzen der Kundenbranchen', 15, 1, 'insolvenzen'),\n    ('insolvenzen', 'WZ08-75', 'Insolvenzen Veterinärwesen', 'Insolvenzen der Kundenbranchen', 16, 1, 'insolvenzen'),\n    ('stimmung', 'BS-SCI-BAL', 'Dienstleister-Vertrauen (Saldo)', 'Stimmung', 17, 0, 'stimmung'),\n    ('stimmung', 'BS-ESI-I', 'Wirtschaftsklima (ESI, Ø = 100)', 'Stimmung', 18, 0, 'stimmung')\n), s AS (\n    SELECT Groesse, Region, MAX(Periode) AS p FROM reihen WHERE Wert IS NOT NULL GROUP BY Groesse, Region\n)\nSELECT k.Thema, k.Reihe, a.Einheit,\n    substr(a.Periode, 6, 2) || '/' || substr(a.Periode, 1, 4) AS Stand,\n    ROUND(a.Wert, 2) AS Aktuell,\n    ROUND(v.Wert, 2) AS Vorjahr,\n    ROUND(a.Wert - v.Wert, 2) AS \"Veränderung\",\n    CASE WHEN k.Pct = 1 AND v.Wert <> 0 THEN ROUND(100.0 * (a.Wert - v.Wert) / v.Wert, 1) END AS \"Veränderung %\",\n    a.Quelle,\n    k.Ziel\nFROM k\nJOIN s ON s.Groesse = k.g AND s.Region = k.r\nJOIN reihen a ON a.Groesse = s.Groesse AND a.Region = s.Region AND a.Periode = s.p\nLEFT JOIN reihen v ON v.Groesse = a.Groesse AND v.Region = a.Region\n    AND v.Periode = (CAST(substr(a.Periode, 1, 4) AS INTEGER) - 1) || substr(a.Periode, 5)\nORDER BY k.Sort"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Marktlage Medizin- & Praxisbedarf – Lage",
+          "target_type": "xlsx",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Thema",
+              "target_field": "Thema",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Thema"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Reihe",
+              "target_field": "Reihe",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Reihe"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Einheit",
+              "target_field": "Einheit",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Einheit"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Stand",
+              "target_field": "Stand",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Stand"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Aktuell",
+              "target_field": "Aktuell",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Aktuell"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Vorjahr",
+              "target_field": "Vorjahr",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Vorjahr"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Veränderung",
+              "target_field": "Veränderung",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Veränderung"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Veränderung %",
+              "target_field": "Veränderung %",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Veränderung %"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Quelle",
+              "target_field": "Quelle",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Quelle"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Ziel",
+              "target_field": "Ziel",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Ziel"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_verlauf",
+      "name": "Marktlage Medizin- & Praxisbedarf – Verlauf",
+      "canvas_nodes": [
+        {
+          "id": "n_reihen",
+          "dataset_id": "ds_reihen",
+          "dataset_name": "reihen",
+          "x": 40,
+          "y": 40,
+          "filters": {}
+        }
+      ],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 380,
+          "y": 40,
+          "width": 350,
+          "height": 244,
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Periode",
+            "Medizinische & zahnmed. Apparate und Materialien",
+            "Spritzen, Kanülen, Katheter",
+            "Andere Waren für medizinische Zwecke",
+            "Arzneimittel (pharmazeutische Spezialitäten)",
+            "Desinfektionsmittel",
+            "Schutzhandschuhe & -kopfbedeckungen",
+            "Hygienepapier (Toilettenpapier, Handtücher)",
+            "Großhandel Medizin-, Dental- & Laborbedarf",
+            "Großhandel Arzneimittel",
+            "Verbraucherpreise insgesamt",
+            "Umsatz Großhandel Gebrauchs- & Verbrauchsgüter (real)",
+            "Diesel (€/l)",
+            "Insolvenzen Arzt- & Zahnarztpraxen",
+            "Insolvenzen Krankenhäuser",
+            "Insolvenzen Pflegeheime",
+            "Insolvenzen Veterinärwesen",
+            "Dienstleister-Vertrauen (Saldo)",
+            "Wirtschaftsklima (ESI, Ø = 100)"
+          ],
+          "sql": "SELECT Periode,\n    MAX(CASE WHEN Groesse = 'erzeugerpreise' AND Region = 'GP19-325' THEN Wert END) AS \"Medizinische & zahnmed. Apparate und Materialien\",\n    MAX(CASE WHEN Groesse = 'erzeugerpreise' AND Region = 'GP19-325013' THEN Wert END) AS \"Spritzen, Kanülen, Katheter\",\n    MAX(CASE WHEN Groesse = 'erzeugerpreise' AND Region = 'GP19-325050' THEN Wert END) AS \"Andere Waren für medizinische Zwecke\",\n    MAX(CASE WHEN Groesse = 'erzeugerpreise' AND Region = 'GP19-2120' THEN Wert END) AS \"Arzneimittel (pharmazeutische Spezialitäten)\",\n    MAX(CASE WHEN Groesse = 'erzeugerpreise' AND Region = 'GP19-202014' THEN Wert END) AS \"Desinfektionsmittel\",\n    MAX(CASE WHEN Groesse = 'erzeugerpreise' AND Region = 'GP19-329911' THEN Wert END) AS \"Schutzhandschuhe & -kopfbedeckungen\",\n    MAX(CASE WHEN Groesse = 'erzeugerpreise' AND Region = 'GP19-172211' THEN Wert END) AS \"Hygienepapier (Toilettenpapier, Handtücher)\",\n    MAX(CASE WHEN Groesse = 'preise_grosshandel' AND Region = 'WZ08-46462' THEN Wert END) AS \"Großhandel Medizin-, Dental- & Laborbedarf\",\n    MAX(CASE WHEN Groesse = 'preise_grosshandel' AND Region = 'WZ08-46461' THEN Wert END) AS \"Großhandel Arzneimittel\",\n    MAX(CASE WHEN Groesse = 'preise_verbraucher' AND Region = 'Deutschland' THEN Wert END) AS \"Verbraucherpreise insgesamt\",\n    MAX(CASE WHEN Groesse = 'umsatz_handel_real' AND Region = 'G464' THEN Wert END) AS \"Umsatz Großhandel Gebrauchs- & Verbrauchsgüter (real)\",\n    MAX(CASE WHEN Groesse = 'kraftstoff' AND Region = 'Diesel' THEN Wert END) AS \"Diesel (€/l)\",\n    MAX(CASE WHEN Groesse = 'insolvenzen' AND Region = 'WZ08-862' THEN Wert END) AS \"Insolvenzen Arzt- & Zahnarztpraxen\",\n    MAX(CASE WHEN Groesse = 'insolvenzen' AND Region = 'WZ08-861' THEN Wert END) AS \"Insolvenzen Krankenhäuser\",\n    MAX(CASE WHEN Groesse = 'insolvenzen' AND Region = 'WZ08-871' THEN Wert END) AS \"Insolvenzen Pflegeheime\",\n    MAX(CASE WHEN Groesse = 'insolvenzen' AND Region = 'WZ08-75' THEN Wert END) AS \"Insolvenzen Veterinärwesen\",\n    MAX(CASE WHEN Groesse = 'stimmung' AND Region = 'BS-SCI-BAL' THEN Wert END) AS \"Dienstleister-Vertrauen (Saldo)\",\n    MAX(CASE WHEN Groesse = 'stimmung' AND Region = 'BS-ESI-I' THEN Wert END) AS \"Wirtschaftsklima (ESI, Ø = 100)\"\nFROM reihen\nGROUP BY Periode\nORDER BY Periode"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Marktlage Medizin- & Praxisbedarf – Verlauf",
+          "target_type": "xlsx",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Periode",
+              "target_field": "Periode",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Periode"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Medizinische & zahnmed. Apparate und Materialien",
+              "target_field": "Medizinische & zahnmed. Apparate und Materialien",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Medizinische & zahnmed. Apparate und Materialien"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Spritzen, Kanülen, Katheter",
+              "target_field": "Spritzen, Kanülen, Katheter",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Spritzen, Kanülen, Katheter"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Andere Waren für medizinische Zwecke",
+              "target_field": "Andere Waren für medizinische Zwecke",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Andere Waren für medizinische Zwecke"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Arzneimittel (pharmazeutische Spezialitäten)",
+              "target_field": "Arzneimittel (pharmazeutische Spezialitäten)",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Arzneimittel (pharmazeutische Spezialitäten)"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Desinfektionsmittel",
+              "target_field": "Desinfektionsmittel",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Desinfektionsmittel"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Schutzhandschuhe & -kopfbedeckungen",
+              "target_field": "Schutzhandschuhe & -kopfbedeckungen",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Schutzhandschuhe & -kopfbedeckungen"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Hygienepapier (Toilettenpapier, Handtücher)",
+              "target_field": "Hygienepapier (Toilettenpapier, Handtücher)",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Hygienepapier (Toilettenpapier, Handtücher)"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Großhandel Medizin-, Dental- & Laborbedarf",
+              "target_field": "Großhandel Medizin-, Dental- & Laborbedarf",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Großhandel Medizin-, Dental- & Laborbedarf"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Großhandel Arzneimittel",
+              "target_field": "Großhandel Arzneimittel",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Großhandel Arzneimittel"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Verbraucherpreise insgesamt",
+              "target_field": "Verbraucherpreise insgesamt",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Verbraucherpreise insgesamt"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Umsatz Großhandel Gebrauchs- & Verbrauchsgüter (real)",
+              "target_field": "Umsatz Großhandel Gebrauchs- & Verbrauchsgüter (real)",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz Großhandel Gebrauchs- & Verbrauchsgüter (real)"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Diesel (€/l)",
+              "target_field": "Diesel (€/l)",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Diesel (€/l)"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Insolvenzen Arzt- & Zahnarztpraxen",
+              "target_field": "Insolvenzen Arzt- & Zahnarztpraxen",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Insolvenzen Arzt- & Zahnarztpraxen"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Insolvenzen Krankenhäuser",
+              "target_field": "Insolvenzen Krankenhäuser",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Insolvenzen Krankenhäuser"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Insolvenzen Pflegeheime",
+              "target_field": "Insolvenzen Pflegeheime",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Insolvenzen Pflegeheime"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Insolvenzen Veterinärwesen",
+              "target_field": "Insolvenzen Veterinärwesen",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Insolvenzen Veterinärwesen"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Dienstleister-Vertrauen (Saldo)",
+              "target_field": "Dienstleister-Vertrauen (Saldo)",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Dienstleister-Vertrauen (Saldo)"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Wirtschaftsklima (ESI, Ø = 100)",
+              "target_field": "Wirtschaftsklima (ESI, Ø = 100)",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Wirtschaftsklima (ESI, Ø = 100)"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "pipelines": [],
+  "forms": [
+    {
+      "name": "Marktlage Medizin- & Praxisbedarf",
+      "portal_config": {
+        "icon": "🌍"
+      },
+      "schema": {
+        "fields": [],
+        "layout": [],
+        "result_tabs": [],
+        "show_ai_assistant": false,
+        "rubrik": {
+          "id": "markt"
+        },
+        "actions": [
+          {
+            "id": "act_lage",
+            "type": "run_mapping",
+            "mapping_id": "m_lage",
+            "pipeline_id": null,
+            "label": "Lage"
+          },
+          {
+            "id": "act_verlauf",
+            "type": "run_mapping",
+            "mapping_id": "m_verlauf",
+            "pipeline_id": null,
+            "label": "Verlauf"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "w_lage",
+            "type": "table",
+            "label": "Lage auf einen Blick: letzter Wert gegen denselben Monat im Vorjahr",
+            "action_id": "act_lage",
+            "config": {
+              "width": 12,
+              "full_rows": true,
+              "hidden_columns": [
+                "Quelle",
+                "Ziel"
+              ],
+              "sprung": {
+                "spalte": "Ziel",
+                "titel": "Mit eigenen Zahlen im Cockpit"
+              }
+            }
+          },
+          {
+            "id": "w_verlauf_1",
+            "type": "line",
+            "label": "Einkaufspreise der Hersteller",
+            "action_id": "act_verlauf",
+            "config": {
+              "width": 6,
+              "x_column": "Periode",
+              "y_columns": [
+                "Medizinische & zahnmed. Apparate und Materialien",
+                "Spritzen, Kanülen, Katheter",
+                "Andere Waren für medizinische Zwecke",
+                "Arzneimittel (pharmazeutische Spezialitäten)",
+                "Desinfektionsmittel",
+                "Schutzhandschuhe & -kopfbedeckungen",
+                "Hygienepapier (Toilettenpapier, Handtücher)"
+              ],
+              "curved": true,
+              "full_rows": true,
+              "luecken": true,
+              "markt": false
+            }
+          },
+          {
+            "id": "w_verlauf_2",
+            "type": "line",
+            "label": "Verkaufspreise",
+            "action_id": "act_verlauf",
+            "config": {
+              "width": 6,
+              "x_column": "Periode",
+              "y_columns": [
+                "Großhandel Medizin-, Dental- & Laborbedarf",
+                "Großhandel Arzneimittel",
+                "Verbraucherpreise insgesamt"
+              ],
+              "curved": true,
+              "full_rows": true,
+              "luecken": true,
+              "markt": false
+            }
+          },
+          {
+            "id": "w_verlauf_3",
+            "type": "line",
+            "label": "Nachfrage",
+            "action_id": "act_verlauf",
+            "config": {
+              "width": 6,
+              "x_column": "Periode",
+              "y_columns": [
+                "Umsatz Großhandel Gebrauchs- & Verbrauchsgüter (real)"
+              ],
+              "curved": true,
+              "full_rows": true,
+              "luecken": true,
+              "markt": false
+            }
+          },
+          {
+            "id": "w_verlauf_4",
+            "type": "line",
+            "label": "Transportkosten",
+            "action_id": "act_verlauf",
+            "config": {
+              "width": 6,
+              "x_column": "Periode",
+              "y_columns": [
+                "Diesel (€/l)"
+              ],
+              "curved": true,
+              "full_rows": true,
+              "luecken": true,
+              "markt": false
+            }
+          },
+          {
+            "id": "w_verlauf_5",
+            "type": "line",
+            "label": "Insolvenzen der Kundenbranchen",
+            "action_id": "act_verlauf",
+            "config": {
+              "width": 6,
+              "x_column": "Periode",
+              "y_columns": [
+                "Insolvenzen Arzt- & Zahnarztpraxen",
+                "Insolvenzen Krankenhäuser",
+                "Insolvenzen Pflegeheime",
+                "Insolvenzen Veterinärwesen"
+              ],
+              "curved": true,
+              "full_rows": true,
+              "luecken": true,
+              "markt": false
+            }
+          },
+          {
+            "id": "w_verlauf_6",
+            "type": "line",
+            "label": "Stimmung",
+            "action_id": "act_verlauf",
+            "config": {
+              "width": 6,
+              "x_column": "Periode",
+              "y_columns": [
+                "Dienstleister-Vertrauen (Saldo)",
+                "Wirtschaftsklima (ESI, Ø = 100)"
+              ],
+              "curved": true,
+              "full_rows": true,
+              "luecken": true,
+              "markt": false
+            }
+          },
+          {
+            "id": "w_profil",
+            "type": "branchenprofil",
+            "label": "Mit Ihren Cockpits verknüpfen",
+            "config": {
+              "width": 12,
+              "profil": {
+                "preisindex": {
+                  "key": "preise_grosshandel",
+                  "region": "WZ08-46462",
+                  "label": "Großhandel: Großh.m. med.,orthopäd.Art.,Dental- u.Laborbedarf"
+                },
+                "branche": {
+                  "code": "G464",
+                  "label": "Großhandel mit Gebrauchs- und Verbrauchsgütern"
+                },
+                "kundenbranchen": [
+                  {
+                    "code": "WZ08-862",
+                    "label": "Arzt- und Zahnarztpraxen"
+                  },
+                  {
+                    "code": "WZ08-861",
+                    "label": "Krankenhäuser"
+                  },
+                  {
+                    "code": "WZ08-871",
+                    "label": "Pflegeheime"
+                  },
+                  {
+                    "code": "WZ08-75",
+                    "label": "Veterinärwesen"
+                  }
+                ],
+                "erzeugerpreise": [
+                  {
+                    "code": "GP19-325",
+                    "label": "Medizinische und zahnmed. Apparate und Materialien"
+                  },
+                  {
+                    "code": "GP19-325013",
+                    "label": "Spritzen, Nadeln, Katheter, Geräte für med. Zwecke"
+                  },
+                  {
+                    "code": "GP19-202014",
+                    "label": "Desinfektionsmittel"
+                  },
+                  {
+                    "code": "GP19-329911",
+                    "label": "Sicherheitshandschuhe, Sicherheitskopfbedeckungen"
+                  }
+                ]
+              }
+            }
+          }
+        ],
+        "doku": {
+          "intro": "Einkaufspreise für Medizinprodukte, Verbrauchsmaterial, Desinfektion und Arzneimittel, Verkaufspreise im medizinischen Großhandel, Nachfrage, Transportkosten und Insolvenzen bei Praxen, Kliniken und Pflegeheimen – aus amtlichen Quellen, monatlich aktuell, ohne eigenes Konto. Die Tabelle zeigt je Reihe den jüngsten verfügbaren Monat gegen denselben Monat im Vorjahr, darunter der Verlauf der letzten sechs Jahre je Thema.",
+          "hinweise": [
+            "Amtliche Zahlen erscheinen mit Verzug: Preise und Umsätze meist nach 4–8 Wochen, Insolvenzen nach etwa 3 Monaten. „Stand“ nennt den Monat des jeweils letzten Werts.",
+            "Preisindizes und Umsatzindizes: 2021 = 100. Stimmung: Wirtschaftsklima mit langjährigem Durchschnitt = 100, Vertrauensindikatoren als Saldo (positiv = mehr Optimisten) – dort keine Prozentveränderung.",
+            "Insolvenzen: beantragte Verfahren je Monat; einzelne Monate schwanken stark, der Verlauf ist aussagekräftiger.",
+            "Quellen: Destatis (Datenlizenz Deutschland – Namensnennung 2.0), Eurostat (Wiederverwendung mit Quellenangabe), EZB, EU-Kommission (Weekly Oil Bulletin, CC BY 4.0), DWD (CC BY 4.0)."
+          ]
+        }
+      }
+    }
+  ],
+  "alert_rules": [],
+  "reports": [],
+  "knowledge": []
+}
