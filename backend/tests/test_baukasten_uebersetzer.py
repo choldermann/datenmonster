@@ -185,7 +185,7 @@ def test_bueroplus_rezepte_passen_nur_zu_bueroplus():
             ("VogStorniertKz", "bit"), ("VogDat", "date"), ("VogGPreisNt", "decimal"), ("VogGEkRoh", "decimal")]]},
         {"full_name": "dbo.Adressen", "columns": [{"name": "AdrAdrNr", "type": "int"}, {"name": "AdrReNa2", "type": "nvarchar"}]}]})
     keys = [r["key"] for r in passende(bp, "mssql")]
-    assert keys == ["bp_umsatz_monat", "bp_top_kunden", "bp_umsatz_verkaeufer"], keys
+    assert keys == ["bp_umsatz_monat", "bp_top_kunden", "bp_abgewandert", "bp_kunden_vorjahr", "bp_umsatz_verkaeufer"], keys
     assert not [r for r in passende(SCHEMA, "mssql") if r["system"] == "büro+"]
 
 
@@ -198,6 +198,37 @@ def test_widget_vorbelegung():
     assert _widget_config("kpi", {"wert": "Anzahl"}, sp)["column"] == "Anzahl"
     with raises(BaukastenFehler, "Zahlenspalte"):
         _widget_config("bar", {}, [Spalte("Monat", "text")])
+
+
+def test_neue_steine():
+    # nur ohne Treffer
+    k = [{"type": "tabelle", "table": "dbo.tKunde", "inner": [
+        {"type": "join", "table": "Rechnung.tRechnung", "links": "kKunde", "rechts": "kKunde", "ohne": True,
+         "inner": [{"type": "filter", "col": "dErstellt", "op": "im Jahr", "val": "2026"}]}]}]
+    e = uebersetzen(k, SCHEMA, literal=True)
+    assert "NOT EXISTS (SELECT 1 FROM (SELECT * FROM [Rechnung].[tRechnung] WHERE [dErstellt] >= N'20260101'" in e.sql, e.sql
+    assert [x.name for x in e.spalten] == ["kKunde", "cFirma", "cLand"]
+    # Einteilen
+    k = [{"type": "tabelle", "table": "Rechnung.tRechnung", "inner": []},
+         {"type": "einteilen", "name": "Größe", "col": "fWert", "regeln": [
+             {"op": "≥", "val": "1000", "wert": "groß"}, {"op": "≥", "val": "100", "wert": "mittel"}], "sonst": "klein"}]
+    e = uebersetzen(k, SCHEMA, literal=True)
+    assert "CASE WHEN [fWert] >= 1000 THEN N'groß' WHEN [fWert] >= 100 THEN N'mittel' ELSE N'klein' END AS [Größe]" in e.sql, e.sql
+    # Datum rechnen
+    k = [{"type": "tabelle", "table": "Rechnung.tRechnung", "inner": []},
+         {"type": "rechnen", "name": "Alter", "a": "dErstellt", "op": "Tage bis heute", "b": ""}]
+    assert "DATEDIFF(DAY, [dErstellt], CAST(GETDATE() AS date)) AS [Alter]" in uebersetzen(k, SCHEMA).sql
+    with raises(BaukastenFehler, "Datumsspalten"):
+        uebersetzen([k[0], {"type": "rechnen", "name": "x", "a": "fWert", "op": "Tage bis heute"}], SCHEMA)
+    # Zeitraum + Vorjahr
+    k = [{"type": "tabelle", "table": "Rechnung.tRechnung", "inner": [
+        {"type": "filter", "col": "dErstellt", "op": "im Zeitraum + Vorjahr"}]},
+         {"type": "verdichten", "by": ["kKunde"], "aggs": [{"fn": "Summe", "col": "fWert"}, {"fn": "Anzahl"}]}]
+    e = uebersetzen(k, SCHEMA, literal=True)
+    assert [x.name for x in e.spalten] == ["kKunde", "Summe fWert", "Summe fWert Vorjahr", "Anzahl", "Anzahl Vorjahr"]
+    assert "t0.[dErstellt] >= DATEADD(YEAR, -1, :von)" in e.sql
+    assert "ROUND(COALESCE(SUM(CASE WHEN [dErstellt] >= DATEADD(YEAR, -1, :von) AND [dErstellt] < DATEADD(YEAR, -1, DATEADD(DAY, 1, :bis)) THEN CAST([fWert] AS float) END), 0), 2) AS [Summe fWert Vorjahr]" in e.sql, e.sql
+    assert e.nutzt_zeitraum
 
 
 if __name__ == "__main__":

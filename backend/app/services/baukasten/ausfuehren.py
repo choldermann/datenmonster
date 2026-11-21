@@ -124,7 +124,10 @@ def warnungen(kette: list, zaehler: dict) -> dict:
         for j, x in enumerate(b.get("inner") or []):
             bid = f"{i}:{j}"
             n = zaehler.get(bid)
-            if x.get("type") == "join" and x.get("alle") and any(f.get("type") == "filter" and f.get("col") for f in x.get("inner") or []):
+            if x.get("type") == "join" and x.get("ohne"):
+                if n == 0 and vorher:
+                    aus[bid] = "Zu jeder Zeile gibt es einen Treffer – „nur ohne Treffer“ lässt deshalb nichts übrig."
+            elif x.get("type") == "join" and x.get("alle") and any(f.get("type") == "filter" and f.get("col") for f in x.get("inner") or []):
                 aus[bid] = ("„Auch ohne Treffer behalten“ ist an: „Nur wenn“ in diesem Winkel filtert dann keine Zeilen weg, "
                             "sondern lässt nur die dazugeholten Spalten leer. Soll nur gezählt werden, was passt – Haken herausnehmen.")
             elif x.get("type") == "join" and vorher is not None and n is not None:

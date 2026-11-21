@@ -58,12 +58,26 @@ REZEPTE = [
                 "aggs": [{"fn": "Summe", "col": "fAnzahl"}, {"fn": "Summe", "col": "Umsatz netto"}]},
                {"type": "sortieren", "col": "Summe fAnzahl", "dir": "absteigend"},
                {"type": "begrenzen", "n": 20}, _AUS]},
-    {"key": "umsatz_land", "name": "Umsatz je Versandland", "text": "Netto-Umsatz und Rechnungen je Lieferland im Zeitraum",
+    {"key": "umsatz_land", "name": "Umsatz je Versandland gegen Vorjahr", "text": "Netto-Umsatz und Rechnungen je Lieferland im Zeitraum, daneben dieselbe Spanne im Vorjahr",
      "kette": [_START,
-               {"type": "tabelle", "table": _RE, "inner": [_OHNE_STORNO, _ZEITRAUM,
+               {"type": "tabelle", "table": _RE, "inner": [_OHNE_STORNO, {"type": "filter", "col": "dErstellt", "op": "im Zeitraum + Vorjahr"},
                 {"type": "join", "table": _ECK, "links": "kRechnung", "rechts": "kRechnung", "inner": []}]},
-               {"type": "verdichten", "by": ["cVersandlandISO", ""],
+               {"type": "verdichten", "by": ["cVersandlandISO"],
                 "aggs": [{"fn": "Summe", "col": "fVkNettoGesamt"}, {"fn": "Anzahl"}]},
+               {"type": "rechnen", "name": "Veränderung", "a": "Summe fVkNettoGesamt", "op": "−", "b": "Summe fVkNettoGesamt Vorjahr"},
+               {"type": "sortieren", "col": "Summe fVkNettoGesamt", "dir": "absteigend"}, _AUS]},
+    {"key": "abgewandert", "ki_hinweis": "Bei konkreten Jahren (z. B. 2025 gekauft, 2026 nicht) außen „im Jahr“ 2025 und im ohne-Winkel „im Jahr“ 2026 statt „in den letzten Tagen“.",
+     "name": "Abgewanderte Kunden", "text": "Kunden mit Rechnungen in den letzten zwei Jahren, aber keiner in den letzten 12 Monaten – mit letztem Kauf",
+     "kette": [_START,
+               {"type": "tabelle", "table": _RE, "inner": [_OHNE_STORNO,
+                {"type": "filter", "col": "dErstellt", "op": "in den letzten Tagen", "val": "730"},
+                {"type": "join", "table": _RE, "links": "kKunde", "rechts": "kKunde", "ohne": True,
+                 "inner": [_OHNE_STORNO, {"type": "filter", "col": "dErstellt", "op": "in den letzten Tagen", "val": "365"}]},
+                {"type": "join", "table": _ECK, "links": "kRechnung", "rechts": "kRechnung", "inner": []},
+                {"type": "join", "table": _ADR, "links": "kKunde", "rechts": "kKunde", "inner": copy.deepcopy(_RECHNUNGSADRESSE)}]},
+               {"type": "verdichten", "by": ["cKundennr", "cFirma (tAdresse)"],
+                "aggs": [{"fn": "Summe", "col": "fVkNettoGesamt"}, {"fn": "Höchstwert", "col": "dErstellt"}, {"fn": "Anzahl"}]},
+               {"type": "rechnen", "name": "Tage ohne Kauf", "a": "Max dErstellt", "op": "Tage bis heute", "b": ""},
                {"type": "sortieren", "col": "Summe fVkNettoGesamt", "dir": "absteigend"}, _AUS]},
     {"key": "offene_rechnungen", "name": "Offene Rechnungen", "text": "Rechnungen mit offenem Betrag, größter zuerst, mit Kunde",
      "kette": [_START,
@@ -115,6 +129,28 @@ REZEPTE += [
                 "aggs": [{"fn": "Summe", "col": "VogGPreisNt"}, {"fn": "Summe", "col": "VogGEkRoh"}, {"fn": "Anzahl"}]},
                _BP_ROH, {"type": "rechnen", "name": "Ø Rechnung", "a": "Summe VogGPreisNt", "op": "÷", "b": "Anzahl"},
                {"type": "sortieren", "col": "Summe VogGPreisNt", "dir": "absteigend"}, {"type": "begrenzen", "n": 20}, _AUS]},
+    {"key": "bp_abgewandert", "system": "büro+", "ki_hinweis": "Bei konkreten Jahren (z. B. 2025 gekauft, 2026 nicht) außen „im Jahr“ 2025 und im ohne-Winkel „im Jahr“ 2026 statt „in den letzten Tagen“.",
+     "name": "Abgewanderte Kunden",
+     "text": "Kunden mit Rechnungen in den letzten zwei Jahren, aber keiner in den letzten 12 Monaten – mit letztem Kauf",
+     "kette": [_START, {"type": "tabelle", "table": _BV, "inner": [
+                   *[f for f in copy.deepcopy(_BP_RECHNUNG) if f["col"] != "VogDat"],
+                   {"type": "filter", "col": "VogDat", "op": "in den letzten Tagen", "val": "730"},
+                   {"type": "join", "table": _BV, "links": "VogAdrNr", "rechts": "VogAdrNr", "ohne": True,
+                    "inner": [*[f for f in copy.deepcopy(_BP_RECHNUNG) if f["col"] != "VogDat"],
+                              {"type": "filter", "col": "VogDat", "op": "in den letzten Tagen", "val": "365"}]},
+                   copy.deepcopy(_BP_KUNDE)]},
+               {"type": "verdichten", "by": ["VogAdrNr", "AdrReNa2"],
+                "aggs": [{"fn": "Summe", "col": "VogGPreisNt"}, {"fn": "Höchstwert", "col": "VogDat"}, {"fn": "Anzahl"}]},
+               {"type": "rechnen", "name": "Tage ohne Kauf", "a": "Max VogDat", "op": "Tage bis heute", "b": ""},
+               {"type": "sortieren", "col": "Summe VogGPreisNt", "dir": "absteigend"}, _AUS]},
+    {"key": "bp_kunden_vorjahr", "system": "büro+", "name": "Kunden gegen Vorjahr",
+     "text": "Netto-Umsatz je Kunde im Zeitraum neben derselben Spanne im Vorjahr, mit Veränderung",
+     "kette": [_START, {"type": "tabelle", "table": _BV, "inner": [
+                   *[f if f["col"] != "VogDat" else {"type": "filter", "col": "VogDat", "op": "im Zeitraum + Vorjahr"} for f in copy.deepcopy(_BP_RECHNUNG)],
+                   copy.deepcopy(_BP_KUNDE)]},
+               {"type": "verdichten", "by": ["VogAdrNr", "AdrReNa2"], "aggs": [{"fn": "Summe", "col": "VogGPreisNt"}]},
+               {"type": "rechnen", "name": "Veränderung", "a": "Summe VogGPreisNt", "op": "−", "b": "Summe VogGPreisNt Vorjahr"},
+               {"type": "sortieren", "col": "Summe VogGPreisNt", "dir": "absteigend"}, _AUS]},
     {"key": "bp_umsatz_verkaeufer", "system": "büro+", "name": "Umsatz je Verkäufer",
      "text": "Netto-Umsatz, Rohertrag und Rechnungen je Bearbeiter (VogVerk) im Zeitraum",
      "kette": [_START, {"type": "tabelle", "table": _BV, "inner": copy.deepcopy(_BP_RECHNUNG)},
@@ -187,16 +223,25 @@ FORMAT = """Kettenformat (JSON-Liste von Steinen, Reihenfolge = Ablauf):
 - {"type":"tabelle","table":"<Schema.Tabelle>","inner":[ … ]}  genau EINE, enthält nur "filter" und "join"
 - im Winkel: {"type":"filter","col":"<Spalte>","op":"<Vergleich>","val":"<Wert>"}
   Vergleiche: = ≠ > < ≥ ≤ "ist einer von" (Werte mit Komma getrennt) "enthält" "beginnt mit" "ist leer" "ist nicht leer" "im Jahr" "in den letzten Tagen" "im Zeitraum" (Datum, nutzt den Zeitraum des Cockpits, ohne val)
+  "im Zeitraum + Vorjahr" (Datum, ohne val): behält Zeitraum UND dieselbe Spanne ein Jahr davor; "verdichten" liefert dann je Kennzahl
+  zusätzlich "<Kennzahl> Vorjahr" (z. B. "Summe fWert Vorjahr") – für „gegen Vorjahr“-Fragen, gruppiert nach Nicht-Datumsspalten
 - WICHTIG: "join" steht NIE auf oberster Ebene, sondern immer in "inner" der Tabelle (wie im Beispiel).
 - Ein "join" enthält in "inner" NUR "filter" – nie einen weiteren "join". Weitere Tabellen kommen als weiterer "join"
   direkt in "inner" der Tabelle; "links" darf dann eine Spalte einer schon dazugeholten Tabelle sein.
 - Textwerte so, wie sie in der Datenbank stehen (Länder in Adressen oft ausgeschrieben, z. B. "Österreich"; ISO-Codes in cISO/cVersandlandISO, z. B. "AT").
 - im Winkel: {"type":"join","table":"<Schema.Tabelle>","links":"<Spalte bisher>","rechts":"<Spalte der neuen Tabelle>","alle":false,"inner":[nur filter auf die neue Tabelle]}
   "alle":true behält auch Zeilen ohne Treffer – nur ohne "filter" im Winkel sinnvoll; soll die neue Tabelle eingrenzen, "alle":false.
+  "ohne":true behält NUR Zeilen ohne Treffer in der (gefilterten) Tabelle, z. B. Kunden ohne Rechnung 2026; es kommen keine Spalten dazu.
   Spalten der dazugeholten Tabelle, die es schon gibt, heißen danach "<Spalte> (<Tabelle ohne Schema>)", z. B. "cFirma (tAdresse)".
 - {"type":"rechnen","name":"<neu>","a":"<Spalte>","op":"+|−|×|÷","b":"<Spalte oder Zahl>"}
+  Datum: "op":"Tage bis heute" (a = Datumsspalte, b leer) oder "Tage zwischen" (a, b = Datumsspalten)
+- {"type":"einteilen","name":"<neu>","col":"<Spalte>","regeln":[{"op":"≥","val":"1000","wert":"groß"},…],"sonst":"klein"}
+  Wenn-dann-Gruppen (erste passende Regel gewinnt); steht auf oberster Ebene wie "rechnen"
 - {"type":"verdichten","by":["<Spalte>" oder {"col":"<Datumsspalte>","teil":"monat|jahr"}, …],"aggs":[{"fn":"Summe|Durchschnitt|Höchstwert|Tiefstwert","col":"<Zahlspalte>"},{"fn":"Anzahl"}]}
   höchstens einmal; danach heißen die Spalten: "<Spalte>", "<Datumsspalte> (Monat)", "Summe <Spalte>", "Ø <Spalte>", "Max <Spalte>", "Min <Spalte>", "Anzahl"
+- Vergleich mit dem Vorjahr: NIE zwei "verdichten", sondern Filter "im Zeitraum + Vorjahr" im Winkel und EIN "verdichten".
+- „hat X, aber nicht Y“ (z. B. letztes Jahr gekauft, dieses Jahr nicht): "join" mit "ohne":true auf dieselbe oder eine andere Tabelle.
+- Werte aus der Frage übernehmen (Jahre, Zeiträume, Namen, Anzahl) – die Beispiele zeigen nur den Aufbau.
 - nach "verdichten": {"type":"filter",…} prüft eine Kennzahl (z. B. "Summe fWert" > 1000)
 - {"type":"sortieren","col":"<Spalte>","dir":"absteigend|aufsteigend"}, {"type":"begrenzen","n":20}
 - {"type":"ausgabe","target":"Tabelle im Cockpit"}  (immer zuletzt)"""
@@ -262,10 +307,12 @@ def _unvollstaendig(kette: list) -> str:
                 return f"„Dazuholen {b.get('table') or ''}“ braucht table, links und rechts (genau diese Schlüssel)."
             if t == "filter" and not b.get("col"):
                 return "Ein „filter“ braucht col."
-            if t == "filter" and b.get("op") not in ("ist leer", "ist nicht leer", "im Zeitraum") and str(b.get("val") or "").strip() == "":
+            if t == "filter" and b.get("op") not in ("ist leer", "ist nicht leer", "im Zeitraum", "im Zeitraum + Vorjahr") and str(b.get("val") or "").strip() == "":
                 return f"„filter {b.get('col')} {b.get('op')}“ braucht einen Wert in val (z. B. die Jahreszahl)."
-            if t == "rechnen" and (not b.get("a") or b.get("b") in (None, "")):
+            if t == "rechnen" and (not b.get("a") or (b.get("b") in (None, "") and b.get("op") != "Tage bis heute")):
                 return "„rechnen“ braucht a und b."
+            if t == "einteilen" and not (b.get("col") and [r for r in (b.get("regeln") or []) if r.get("wert")]):
+                return "„einteilen“ braucht col und mindestens eine Regel mit wert."
             if t == "sortieren" and not b.get("col"):
                 return "„sortieren“ braucht col."
             if t == "verdichten" and not [x for x in (b.get("by") or []) if x]:
@@ -313,10 +360,13 @@ async def ki_kette(svc, schema_json: dict, schema: Schema, dialekt: str, text: s
     # Beispiele und Fachregeln passend zur Datenbank (JTL oder büro+) – erkannt an den Rezepten, die hier passen
     passt = passende(schema, dialekt)
     art = "büro+" if any(r["system"] == "büro+" for r in passt) else "JTL"
-    beisp = [r for r in passt if r["system"] == art and r["key"] in ("top_kunden", "bestseller", "bp_top_kunden", "bp_bestseller")]
+    beisp = [r for r in passt if r["system"] == art and r["key"] in ("top_kunden", "bestseller", "abgewandert", "umsatz_land",
+                                                     "bp_top_kunden", "bp_bestseller", "bp_abgewandert", "bp_kunden_vorjahr")]
     if not beisp:
         beisp = [r for r in REZEPTE if r["key"] in ("top_kunden", "bestseller")]
-    beispiele = "\n\n".join(f"Beispiel ({r['name']}):\n{json.dumps(_tabellen_aufloesen(r['kette'], schema), ensure_ascii=False)}"
+    ki_hinweis = {r["key"]: r.get("ki_hinweis", "") for r in REZEPTE}
+    beispiele = "\n\n".join(f"Beispiel ({r['name']}{' – ' + ki_hinweis[r['key']] if ki_hinweis.get(r['key']) else ''}):\n"
+                             f"{json.dumps(_tabellen_aufloesen(r['kette'], schema), ensure_ascii=False)}"
                              for r in beisp)
     system = (
         "Du baust Auswertungen für einen Händler aus Bausteinen. Antworte NUR mit JSON "

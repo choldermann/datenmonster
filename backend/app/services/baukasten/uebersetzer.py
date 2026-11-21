@@ -61,17 +61,17 @@ def pruefen(kette: list) -> None:
                 raise BaukastenFehler("Nur eine Tabelle auf oberster Ebene – weitere über „Dazuholen“.")
             tab = i
             _innen_pruefen(b.get("inner") or [], "tabelle")
-        elif t in ("rechnen", "sortieren", "begrenzen", "verdichten", "ausgabe", "filter", "profi") and tab < 0:
+        elif t in ("rechnen", "einteilen", "sortieren", "begrenzen", "verdichten", "ausgabe", "filter", "profi") and tab < 0:
             raise BaukastenFehler("Zuerst eine Tabelle, dann die Schritte.")
         if t == "filter" and verd < 0:
             raise BaukastenFehler("„Nur wenn“ auf oberster Ebene prüft eine Kennzahl und steht deshalb nach „Zusammenfassen“.")
         if t == "verdichten":
             if verd >= 0:
-                raise BaukastenFehler("Nur ein „Zusammenfassen“ je Auswertung.")
+                raise BaukastenFehler("Nur ein „Zusammenfassen“ je Auswertung – für den Vergleich mit dem Vorjahr im Winkel „Nur wenn … im Zeitraum + Vorjahr“ nehmen.")
             verd = i
         if t == "ausgabe" and i != len(kette) - 1:
             raise BaukastenFehler("Die Ausgabe ist immer der letzte Stein.")
-        if t not in ("start", "tabelle", "filter", "rechnen", "verdichten", "sortieren", "begrenzen", "ausgabe", "profi"):
+        if t not in ("start", "tabelle", "filter", "rechnen", "einteilen", "verdichten", "sortieren", "begrenzen", "ausgabe", "profi"):
             raise BaukastenFehler(f"Unbekannter Stein: {t!r}")
     if tab < 0:
         raise BaukastenFehler("Es fehlt eine Tabelle.")
@@ -153,6 +153,17 @@ class Dialekt:
     def bis_einschl(self, x: str) -> str:
         return {"mysql": f"DATE_ADD({x}, INTERVAL 1 DAY)", "postgresql": f"({x} + INTERVAL '1 day')"}.get(self.name, f"DATEADD(DAY, 1, {x})")
 
+    def vorjahr(self, x: str) -> str:
+        return {"mysql": f"DATE_SUB({x}, INTERVAL 1 YEAR)", "postgresql": f"(CAST({x} AS date) - INTERVAL '1 year')"}.get(self.name, f"DATEADD(YEAR, -1, {x})")
+
+    def tage(self, a: str, b: str | None) -> str:
+        """Tage von a bis b (b leer = heute)."""
+        if self.name == "mysql":
+            return f"DATEDIFF({b or 'CURDATE()'}, {a})"
+        if self.name == "postgresql":
+            return f"(CAST({b or 'CURRENT_DATE'} AS date) - CAST({a} AS date))"
+        return f"DATEDIFF(DAY, {a}, {b or 'CAST(GETDATE() AS date)'})"
+
     def like(self, x: str, p: str) -> str:
         return f"LOWER({x}) LIKE LOWER({p})" if self.name != "postgresql" else f"{x} ILIKE {p}"
 
@@ -179,7 +190,8 @@ def vorschau_begrenzen(sql: str, n: int, dialekt: str) -> str:
 
 # ── Übersetzen ─────────────────────────────────────────────────────────────
 OPS = ("=", "≠", ">", "<", "≥", "≤", "ist einer von", "enthält", "beginnt mit", "ist leer", "ist nicht leer",
-       "im Jahr", "in den letzten Tagen", "im Zeitraum")
+       "im Jahr", "in den letzten Tagen", "im Zeitraum", "im Zeitraum + Vorjahr")
+DATUM_OPS = ("Tage bis heute", "Tage zwischen")
 RECHEN_OPS = {"+": "+", "−": "-", "-": "-", "×": "*", "*": "*", "÷": "/", "/": "/"}
 AGG = {"Summe": "SUM", "Durchschnitt": "AVG", "Höchstwert": "MAX", "Tiefstwert": "MIN", "Anzahl": "COUNT"}
 AGG_KURZ = {"Summe": "Summe", "Durchschnitt": "Ø", "Höchstwert": "Max", "Tiefstwert": "Min"}
@@ -209,7 +221,7 @@ def uebersetzen(kette: list, schema: Schema, dialekt: str = "mssql", literal: bo
     pruefen(kette)
     d = Dialekt(dialekt)
     bind = _Binder(literal=literal)
-    ctx = {"zeitraum": False}
+    ctx = {"zeitraum": False, "vj_spalte": None}
     stufen: list[Stufe] = []
     erg = Ergebnis(sql="", spalten=[])
 
@@ -240,18 +252,28 @@ def uebersetzen(kette: list, schema: Schema, dialekt: str = "mssql", literal: bo
             vorher = stufen[-1]
             stufen.append(Stufe(f"s{len(stufen)}", f"SELECT * FROM {vorher.name}" + (f"\nWHERE {bed}" if bed else ""), spalten))
             merken(bid, spalten, len(stufen) - 1)
-        elif t == "rechnen" and (not b.get("a") or b.get("b") in (None, "")):
+        elif t == "rechnen" and (not b.get("a") or (b.get("b") in (None, "") and b.get("op") != "Tage bis heute")):
             erg.spalten_je_block[bid] = [x.name for x in spalten]      # halbfertig: wirkt noch nicht
             merken(bid, spalten, len(stufen) - 1)
         elif t == "rechnen":
             spalten_in = spalten
             name = _name(b.get("name") or "Neue Spalte")
-            a = _operand(b.get("a"), spalten, d, bind)
-            c = _operand(b.get("b"), spalten, d, bind)
-            op = RECHEN_OPS.get(b.get("op") or "")
-            if not op:
-                raise BaukastenFehler("Rechnen: unbekannte Rechenart.")
-            if op == "/":
+            if b.get("op") in DATUM_OPS:
+                sa = _spalte(b.get("a"), spalten)
+                sb = _spalte(b.get("b"), spalten) if b.get("op") == "Tage zwischen" else None
+                if sa.typ != "datum" or (sb is not None and sb.typ != "datum"):
+                    raise BaukastenFehler(f"„{b.get('op')}“ rechnet mit Datumsspalten.")
+                ausdruck = d.tage(d.q(sa.name), d.q(sb.name) if sb else None)
+                op = None
+            else:
+                a = _operand(b.get("a"), spalten, d, bind)
+                c = _operand(b.get("b"), spalten, d, bind)
+                op = RECHEN_OPS.get(b.get("op") or "")
+                if not op:
+                    raise BaukastenFehler("Rechnen: unbekannte Rechenart.")
+            if op is None:
+                pass
+            elif op == "/":
                 ausdruck = f"ROUND(CAST({a} AS float) / NULLIF(CAST({c} AS float), 0), 2)"
             elif op in "+-":                       # Differenz zweier Geldbeträge: ohne Rechenrauschen (…,37000000002)
                 ausdruck = f"ROUND(CAST({a} AS float) {op} CAST({c} AS float), 2)"
@@ -261,6 +283,27 @@ def uebersetzen(kette: list, schema: Schema, dialekt: str = "mssql", literal: bo
                 raise BaukastenFehler(f"Rechnen: die Spalte „{name}“ gibt es schon – anderen Namen wählen.")
             vorher = stufen[-1]
             stufen.append(Stufe(f"s{len(stufen)}", f"SELECT *, {ausdruck} AS {d.q(name)} FROM {vorher.name}", spalten + [Spalte(name, "zahl")]))
+            spalten = stufen[-1].spalten
+            merken(bid, spalten_in, len(stufen) - 1)
+        elif t == "einteilen" and (not b.get("col") or not [r for r in (b.get("regeln") or []) if str(r.get("wert") or "").strip()]):
+            merken(bid, spalten, len(stufen) - 1)                       # halbfertig: wirkt noch nicht
+        elif t == "einteilen":
+            spalten_in = spalten
+            name = _name(b.get("name") or "Gruppe")
+            if any(x.name.lower() == name.lower() for x in spalten):
+                raise BaukastenFehler(f"Einteilen: die Spalte „{name}“ gibt es schon – anderen Namen wählen.")
+            faelle = []
+            for r in (b.get("regeln") or [])[:12]:
+                wert = str(r.get("wert") or "").strip()[:80]
+                if not wert:
+                    continue
+                bed = _bedingung({"col": b.get("col"), "op": r.get("op") or "=", "val": r.get("val")}, spalten, d, bind, ctx)
+                if bed:
+                    faelle.append(f"WHEN {bed} THEN {bind(wert, 'text')}")
+            sonst = str(b.get("sonst") or "").strip()[:80]
+            ausdruck = ("CASE " + " ".join(faelle) + (f" ELSE {bind(sonst, 'text')}" if sonst else "") + " END") if faelle else "NULL"
+            vorher = stufen[-1]
+            stufen.append(Stufe(f"s{len(stufen)}", f"SELECT *, {ausdruck} AS {d.q(name)} FROM {vorher.name}", spalten + [Spalte(name, "text")]))
             spalten = stufen[-1].spalten
             merken(bid, spalten_in, len(stufen) - 1)
         elif t == "verdichten":
@@ -292,18 +335,40 @@ def uebersetzen(kette: list, schema: Schema, dialekt: str = "mssql", literal: bo
                 fn = a.get("fn")
                 if fn not in AGG:
                     raise BaukastenFehler(f"Zusammenfassen: unbekannte Kennzahl {fn!r}.")
+                vj = ctx["vj_spalte"] if ctx["vj_spalte"] in [x.name for x in spalten] else None
                 if fn == "Anzahl":
-                    name, expr = "Anzahl", "COUNT(*)"
+                    name = "Anzahl"
+                    wert_expr = "1"
                 else:
                     s = _spalte(a.get("col"), spalten)
                     if s.typ != "zahl" and fn in ("Summe", "Durchschnitt"):
                         raise BaukastenFehler(f"„{fn}“ geht nur mit Zahlen – „{s.name}“ ist keine.")
                     name = f"{AGG_KURZ[fn]} {s.name}"
-                    expr = f"ROUND({AGG[fn]}(CAST({d.q(s.name)} AS float)), 2)" if fn in ("Summe", "Durchschnitt") else f"{AGG[fn]}({d.q(s.name)})"
+                    wert_expr = f"CAST({d.q(s.name)} AS float)" if fn in ("Summe", "Durchschnitt") else d.q(s.name)
+
+                def agg(bed: str | None) -> str:
+                    w = f"CASE WHEN {bed} THEN {wert_expr} END" if bed else wert_expr
+                    if fn == "Anzahl":
+                        return f"COUNT({w})" if bed else "COUNT(*)"
+                    if fn == "Summe" and bed:          # Vorjahresvergleich: kein Umsatz = 0, nicht leer
+                        return f"ROUND(COALESCE(SUM({w}), 0), 2)"
+                    return f"ROUND({AGG[fn]}({w}), 2)" if fn in ("Summe", "Durchschnitt") else f"{AGG[fn]}({w})"
                 if any(n.name.lower() == name.lower() for n in neu):
                     continue
-                aus.append(f"{expr} AS {d.q(name)}")
-                neu.append(Spalte(name, "zahl" if fn != "Höchstwert" and fn != "Tiefstwert" else _spalte(a.get("col"), spalten).typ))
+                typ = "zahl" if fn not in ("Höchstwert", "Tiefstwert") else _spalte(a.get("col"), spalten).typ
+                if vj:
+                    # „im Zeitraum + Vorjahr“: je Kennzahl der gewählte Zeitraum und dieselbe Spanne ein Jahr davor
+                    x = d.q(vj)
+                    bis1 = d.bis_einschl(":bis")
+                    jetzt = f"{x} >= :von AND {x} < {bis1}"
+                    davor = f"{x} >= {d.vorjahr(':von')} AND {x} < {d.vorjahr(bis1)}"
+                    aus.append(f"{agg(jetzt)} AS {d.q(name)}")
+                    neu.append(Spalte(name, typ))
+                    aus.append(f"{agg(davor)} AS {d.q(name + ' Vorjahr')}")
+                    neu.append(Spalte(name + " Vorjahr", typ))
+                else:
+                    aus.append(f"{agg(None)} AS {d.q(name)}")
+                    neu.append(Spalte(name, typ))
             vorher = stufen[-1]
             stufen.append(Stufe(f"s{len(stufen)}", f"SELECT {', '.join(aus)}\nFROM {vorher.name}\nGROUP BY {', '.join(gruppe)}", neu))
             spalten = neu
@@ -395,6 +460,13 @@ def _tabelle(b, i, schema: Schema, d: Dialekt, bind, ctx, stufen: list, merken) 
                 merken(f"{i}.{j}:{k}", fspalten, None, roh_sql=sub)
             sub = f"SELECT * FROM {d.tabelle(fremd)}" + (f" WHERE {' AND '.join(fwo)}" if fwo else "")
             links_expr = _quellen(auswahl).get(links.name, f"{alias}.{d.q(links.name)}")
+            if x.get("ohne"):
+                # „nur ohne Treffer“: Zeilen behalten, zu denen es in der (gefilterten) Tabelle NICHTS gibt –
+                # z. B. Kunden ohne Rechnung in diesem Jahr. Es kommen keine Spalten dazu.
+                wo.append(f"NOT EXISTS (SELECT 1 FROM ({sub}) {ja} WHERE {ja}.{d.q(rechts.name)} = {links_expr})")
+                merken(bid, spalten_in, None, roh_sql=aktueller_sql())
+                merken(f"{i}:{j}:fremd", fspalten, None, roh_sql=sub)
+                continue
             art = "LEFT" if x.get("alle") else "INNER"   # „auch ohne Treffer behalten“
             joins.append(f"\n{art} JOIN ({sub}) {ja} ON {links_expr} = {ja}.{d.q(rechts.name)}")
             # Namen ohne Rücksicht auf Groß-/Kleinschreibung vergleichen: für SQL Server sind cUstId und cUSTID dieselbe Spalte
@@ -463,10 +535,14 @@ def _bedingung(b: dict, spalten: list[Spalte], d: Dialekt, bind, ctx, alias=None
         return f"({x} IS NULL OR {d.text(x)} = '')" if s.typ == "text" else f"{x} IS NULL"
     if op == "ist nicht leer":
         return f"({x} IS NOT NULL AND {d.text(x)} <> '')" if s.typ == "text" else f"{x} IS NOT NULL"
-    if op == "im Zeitraum":
+    if op in ("im Zeitraum", "im Zeitraum + Vorjahr"):
         if s.typ != "datum":
-            raise BaukastenFehler(f"„im Zeitraum“ geht nur bei Datumsspalten – „{s.name}“ ist keine.")
+            raise BaukastenFehler(f"„{op}“ geht nur bei Datumsspalten – „{s.name}“ ist keine.")
         ctx["zeitraum"] = True
+        if op == "im Zeitraum + Vorjahr":
+            ctx["vj_spalte"] = s.name          # „Zusammenfassen“ teilt danach in Zeitraum und Vorjahr
+            return (f"(({x} >= :von AND {x} < {d.bis_einschl(':bis')}) OR "
+                    f"({x} >= {d.vorjahr(':von')} AND {x} < {d.vorjahr(d.bis_einschl(':bis'))}))")
         return f"{x} >= :von AND {x} < {d.bis_einschl(':bis')}"
     if leer:
         return ""

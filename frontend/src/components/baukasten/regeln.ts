@@ -8,7 +8,8 @@ export const ART: Record<string, { name: string; farbe: string; form: "hut" | "w
   tabelle:    { name: "Aus Tabelle", farbe: "#2f6fd6", form: "winkel", gruppe: "Daten", text: "Alles im Winkel gilt für diese Tabelle" },
   join:       { name: "Dazuholen", farbe: "#6a4fd1", form: "winkel", gruppe: "Daten", text: "Zweite Tabelle im Winkel verknüpfen" },
   filter:     { name: "Nur wenn", farbe: "#11806f", form: "stein", gruppe: "Schritte", text: "Zeilen filtern – nach dem Trichter: Kennzahl prüfen" },
-  rechnen:    { name: "Rechnen", farbe: "#b03c78", form: "stein", gruppe: "Schritte", text: "Neue Spalte aus zwei Werten" },
+  rechnen:    { name: "Rechnen", farbe: "#b03c78", form: "stein", gruppe: "Schritte", text: "Neue Spalte aus zwei Werten – auch Tage seit einem Datum" },
+  einteilen:  { name: "Einteilen", farbe: "#0f7c9c", form: "stein", gruppe: "Schritte", text: "Wenn … dann: Werte in Gruppen wie „groß/mittel/klein“" },
   verdichten: { name: "Zusammenfassen", farbe: "#d0640f", form: "trichter", gruppe: "Schritte", text: "Trichter: aus Zeilen werden Gruppen" },
   sortieren:  { name: "Sortieren", farbe: "#4c6b5c", form: "stein", gruppe: "Schritte", text: "Reihenfolge festlegen" },
   begrenzen:  { name: "Nur die ersten", farbe: "#4c6b5c", form: "stein", gruppe: "Schritte", text: "z. B. die Top 10" },
@@ -16,8 +17,9 @@ export const ART: Record<string, { name: string; farbe: string; form: "hut" | "w
 };
 export const PROFI_FARBE = "#6b7178";
 
-export const OPS = ["=", "≠", ">", "<", "≥", "≤", "ist einer von", "enthält", "beginnt mit", "ist leer", "ist nicht leer", "im Jahr", "in den letzten Tagen", "im Zeitraum"];
-export const OHNE_WERT = new Set(["ist leer", "ist nicht leer", "im Zeitraum"]);
+export const OPS = ["=", "≠", ">", "<", "≥", "≤", "ist einer von", "enthält", "beginnt mit", "ist leer", "ist nicht leer", "im Jahr", "in den letzten Tagen", "im Zeitraum", "im Zeitraum + Vorjahr"];
+export const OHNE_WERT = new Set(["ist leer", "ist nicht leer", "im Zeitraum", "im Zeitraum + Vorjahr"]);
+export const RECHENARTEN = ["+", "−", "×", "÷", "Tage bis heute", "Tage zwischen"];
 
 export function neu(t: string): Stein {
   switch (t) {
@@ -26,6 +28,7 @@ export function neu(t: string): Stein {
     case "join": return { type: "join", table: "", links: "", rechts: "", inner: [] };
     case "filter": return { type: "filter", col: "", op: "=", val: "" };
     case "rechnen": return { type: "rechnen", name: "Neue Spalte", a: "", op: "÷", b: "" };
+    case "einteilen": return { type: "einteilen", name: "Gruppe", col: "", regeln: [{ op: "≥", val: "", wert: "" }], sonst: "" };
     case "verdichten": return { type: "verdichten", by: ["", ""], aggs: [{ fn: "Summe", col: "" }, { fn: "Anzahl" }] };
     case "sortieren": return { type: "sortieren", col: "", dir: "absteigend" };
     case "begrenzen": return { type: "begrenzen", n: 10 };
@@ -60,7 +63,7 @@ export function gueltig(c: Stein[]): boolean {
     if (t === "start" && i !== 0) return false;
     if (t === "join") return false;
     if (t === "tabelle") { if (tab >= 0) return false; tab = i; if (!gueltigInnen(c[i].inner || [], "tabelle")) return false; }
-    if (["rechnen", "sortieren", "begrenzen", "verdichten", "profi", "ausgabe", "filter"].includes(t) && tab < 0) return false;
+    if (["rechnen", "einteilen", "sortieren", "begrenzen", "verdichten", "profi", "ausgabe", "filter"].includes(t) && tab < 0) return false;
     if (t === "filter" && verd < 0) return false;          // oben nur als Kennzahl-Prüfung nach dem Trichter
     if (t === "verdichten") { if (verd >= 0) return false; verd = i; }
     if (t === "ausgabe" && i !== c.length - 1) return false;

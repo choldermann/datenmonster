@@ -15,7 +15,7 @@ import TabellenSuche from "../components/baukasten/TabellenSuche";
 import VorschauDiagramm from "../components/baukasten/VorschauDiagramm";
 import { useProject } from "../context/ProjectContext";
 import {
-  ART, OPS, OHNE_WERT, PROFI_FARBE, Stein, Nutzlast, liste, kindKey, blockId, simuliere, alleStellen, platzFuer, gueltig,
+  ART, OPS, OHNE_WERT, RECHENARTEN, PROFI_FARBE, Stein, Nutzlast, liste, kindKey, blockId, simuliere, alleStellen, platzFuer, gueltig,
 } from "../components/baukasten/regeln";
 
 const CSS = `
@@ -353,19 +353,51 @@ export default function Baukasten() {
               {!OHNE_WERT.has(b.op) && <input className={`bk-oval${String(b.val ?? "").trim() === "" ? " leer" : ""}`} value={b.val ?? ""} placeholder={b.op === "ist einer von" ? "Wert 1, Wert 2 …" : "Wert"}
                 aria-label="Wert" onClick={(e) => e.stopPropagation()} onChange={(e) => aendern(key, i, { val: e.target.value })} />}
               {b.op === "im Zeitraum" && <span className="bk-tag">Zeitraum des Cockpits</span>}
+              {b.op === "im Zeitraum + Vorjahr" && <span className="bk-tag" title="„Zusammenfassen“ zeigt danach je Kennzahl den Zeitraum und dieselbe Spanne ein Jahr davor">Zeitraum + Vorjahr → Vergleichsspalten</span>}
             </span>
             {zahl(bid, true, vorherZahl(key, i))}{weg(key, i)}{warnung(bid)}
           </div>);
       }
-      case "rechnen": return (
+      case "rechnen": {
+        const datum = b.op === "Tage bis heute" || b.op === "Tage zwischen";
+        return (
         <div className={cls()} style={{ "--c": farbe } as any} {...ziehbar}><Noppen />
           <span className="t">Rechnen</span>
           <input className="bk-oval" value={b.name} aria-label="Name der neuen Spalte" onClick={(e) => e.stopPropagation()} onChange={(e) => aendern(key, i, { name: e.target.value })} /> =
-          {sel("a", cols, b.a, (v) => aendern(key, i, { a: v }))}{sel("Rechenart", ["+", "−", "×", "÷"], b.op, (v) => aendern(key, i, { op: v }), null, "bk-op")}
-          <input className="bk-oval kurz" list={`bk-cols-${bid}`} value={b.b} placeholder="Spalte/Zahl" aria-label="zweiter Wert" onClick={(e) => e.stopPropagation()} onChange={(e) => aendern(key, i, { b: e.target.value })} />
-          <datalist id={`bk-cols-${bid}`}>{cols.map((c) => <option key={c} value={c} />)}</datalist>
+          {datum && b.op === "Tage bis heute" ? <span>Tage von</span> : null}
+          {sel("a", cols, b.a, (v) => aendern(key, i, { a: v }))}{sel("Rechenart", RECHENARTEN, b.op, (v) => aendern(key, i, { op: v }), null, "bk-op")}
+          {b.op === "Tage zwischen" ? <>{sel("bis Datum", cols, b.b, (v) => aendern(key, i, { b: v }))}</>
+            : b.op === "Tage bis heute" ? <span>bis heute</span>
+            : <><input className="bk-oval kurz" list={`bk-cols-${bid}`} value={b.b} placeholder="Spalte/Zahl" aria-label="zweiter Wert" onClick={(e) => e.stopPropagation()} onChange={(e) => aendern(key, i, { b: e.target.value })} />
+              <datalist id={`bk-cols-${bid}`}>{cols.map((c) => <option key={c} value={c} />)}</datalist></>}
           {zahl(bid, false)}{weg(key, i)}
         </div>);
+      }
+      case "einteilen": {
+        const regeln: any[] = b.regeln || [];
+        const setzeRegel = (k: number, teil: any) => aendern(key, i, { regeln: regeln.map((r, n) => n === k ? { ...r, ...teil } : r) });
+        return (
+        <div className={cls()} style={{ "--c": farbe } as any} {...ziehbar}><Noppen />
+          <span className="t">Einteilen</span>
+          <input className="bk-oval" value={b.name} aria-label="Name der neuen Spalte" onClick={(e) => e.stopPropagation()} onChange={(e) => aendern(key, i, { name: e.target.value })} />
+          <span>nach</span>{sel("Spalte", cols, b.col, (v) => aendern(key, i, { col: v }))}
+          {zahl(bid, false)}{weg(key, i)}
+          {regeln.map((r, k) => (
+            <span key={k} className="bk-hex" style={{ flexBasis: "100%" }}>
+              <span>{k === 0 ? "wenn" : "sonst wenn"}</span>
+              {sel("Vergleich", OPS.filter((o) => !["im Zeitraum", "im Zeitraum + Vorjahr"].includes(o)), r.op, (v) => setzeRegel(k, { op: v }), null, "bk-op")}
+              {!OHNE_WERT.has(r.op) && <input className="bk-oval kurz" value={r.val ?? ""} placeholder="Wert" aria-label="Wert" onClick={(e) => e.stopPropagation()} onChange={(e) => setzeRegel(k, { val: e.target.value })} />}
+              <span>→</span>
+              <input className="bk-oval" value={r.wert ?? ""} placeholder="z. B. groß" aria-label="Gruppe" onClick={(e) => e.stopPropagation()} onChange={(e) => setzeRegel(k, { wert: e.target.value })} />
+              {regeln.length > 1 && <button className="bk-x" title="Regel entfernen" aria-label="Regel entfernen" onClick={(e) => { e.stopPropagation(); aendern(key, i, { regeln: regeln.filter((_, n) => n !== k) }); }}>×</button>}
+            </span>))}
+          <span className="bk-hex" style={{ flexBasis: "100%" }}>
+            <button className="bk-tag" style={{ cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); aendern(key, i, { regeln: [...regeln, { op: regeln[regeln.length - 1]?.op || "=", val: "", wert: "" }] }); }}>＋ Regel</button>
+            <span>sonst →</span>
+            <input className="bk-oval" value={b.sonst ?? ""} placeholder="z. B. klein (leer = nichts)" aria-label="sonst" onClick={(e) => e.stopPropagation()} onChange={(e) => aendern(key, i, { sonst: e.target.value })} />
+          </span>
+        </div>);
+      }
       case "sortieren": return (
         <div className={cls()} style={{ "--c": farbe } as any} {...ziehbar}><Noppen />
           <span className="t">Sortieren nach</span>{sel("Spalte", cols, b.col, (v) => aendern(key, i, { col: v }))}
@@ -479,9 +511,13 @@ export default function Baukasten() {
                 <span>über</span>{sel("links", cols, b.links, (v) => aendern(key, i, { links: v, vorgeschlagen: false }))}
                 <span>=</span>{sel("rechts", tabSpalten[b.table] || [], b.rechts, (v) => aendern(key, i, { rechts: v, vorgeschlagen: false }))}
                 {b.vorgeschlagen && <span className="bk-tag" title="Aus den Schlüsseln der Tabellen erkannt">✓ vorgeschlagen</span>}
-                <label className="bk-tag" style={{ display: "inline-flex", gap: 4, alignItems: "center", cursor: "pointer" }} onClick={(e) => e.stopPropagation()}
-                  title="Aus: nur Zeilen mit passendem Eintrag (INNER JOIN). An: alle Zeilen behalten, fehlende Werte bleiben leer (LEFT JOIN).">
-                  <input type="checkbox" checked={!!b.alle} onChange={(e) => aendern(key, i, { alle: e.target.checked })} /> auch ohne Treffer behalten</label>
+                <select className="bk-chip" aria-label="Welche Zeilen bleiben" value={b.ohne ? "ohne" : b.alle ? "alle" : "mit"} onClick={(e) => e.stopPropagation()}
+                  title="nur mit Treffer: INNER JOIN · auch ohne Treffer: LEFT JOIN, fehlende Werte bleiben leer · nur OHNE Treffer: z. B. Kunden ohne Rechnung"
+                  onChange={(e) => aendern(key, i, { alle: e.target.value === "alle", ohne: e.target.value === "ohne" })}>
+                  <option value="mit">nur Zeilen mit Treffer</option>
+                  <option value="alle">auch ohne Treffer behalten</option>
+                  <option value="ohne">nur Zeilen OHNE Treffer</option>
+                </select>
               </>}
               {b.type === "tabelle" ? zahl(kopfId, false) : zahl(bid, true, vorher)}{weg(key, i)}{warnung(bid)}
             </div>
