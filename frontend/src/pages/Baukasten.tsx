@@ -89,7 +89,7 @@ const CSS = `
 .bk-oval { border-radius: 999px; padding: 0 11px; width: 110px; cursor: text; }
 .bk-oval.kurz { width: 62px; }
 .bk-oval.leer { box-shadow: inset 0 0 0 2px #f0994f; }
-.bk-op { border-radius: 4px; font-family: ui-monospace, Consolas, monospace; max-width: 150px; }
+.bk-op { border-radius: 4px; font-family: ui-monospace, Consolas, monospace; max-width: 190px; }
 .bk-hex { display: inline-flex; align-items: center; gap: 5px; background: rgba(0,0,0,.22); padding: 5px 18px; min-height: 37px;
   clip-path: polygon(13px 0, calc(100% - 13px) 0, 100% 50%, calc(100% - 13px) 100%, 13px 100%, 0 50%); }
 .bk-pille { display: inline-flex; align-items: center; gap: 4px; background: rgba(0,0,0,.2); border-radius: 999px; padding: 3px 7px; }
@@ -469,7 +469,7 @@ export default function Baukasten() {
             <span key={k} className="bk-hex" style={{ flexBasis: "100%" }}>
               {sel("Spalte", cols, x.col, (v) => setze(l.map((y, n) => n === k ? { ...y, col: v } : y)))}
               <span>als</span>
-              <input className="bk-oval" value={x.als ?? ""} placeholder={x.col || "Name"} aria-label="Name im Ergebnis" onClick={(e) => e.stopPropagation()}
+              <input className="bk-oval" style={{ width: 170 }} value={x.als ?? ""} placeholder={x.col || "Name"} aria-label="Name im Ergebnis" onClick={(e) => e.stopPropagation()}
                 onChange={(e) => setze(l.map((y, n) => n === k ? { ...y, als: e.target.value } : y))} />
               <button className="bk-x" title="nach oben" aria-label="nach oben" disabled={k === 0} onClick={(e) => { e.stopPropagation(); schiebe(k, -1); }}>↑</button>
               <button className="bk-x" title="nach unten" aria-label="nach unten" disabled={k === l.length - 1} onClick={(e) => { e.stopPropagation(); schiebe(k, 1); }}>↓</button>
@@ -786,7 +786,7 @@ export default function Baukasten() {
               <BookOpen size={14} style={{ color: "var(--text-dim)" }} />
               <select aria-label="Mit einem Rezept beginnen" value="" disabled={!rezepte.length}
                 onChange={(e) => { const r = rezepte.find((x) => x.key === e.target.value); if (r) { ersetzen(r.kette, r.text); if (!name.trim()) setName(r.name); } }}
-                style={{ background: "var(--bg-elevated)", color: "var(--text-bright)", border: "1px solid var(--border)", borderRadius: 7, padding: "5px 8px", fontSize: 13 }}>
+                style={{ flex: "1 1 260px", minWidth: 0, maxWidth: "100%", background: "var(--bg-elevated)", color: "var(--text-bright)", border: "1px solid var(--border)", borderRadius: 7, padding: "5px 8px", fontSize: 13 }}>
                 <option value="">{rezepte.length ? `Mit einem Rezept beginnen (${rezepte.length}) …` : "Keine Rezepte für diese Datenbank"}</option>
                 {[...new Set(rezepte.map((r: any) => r.bereich || "Vertrieb"))].map((g) => (
                   <optgroup key={g as string} label={g as string}>
