@@ -12,6 +12,7 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Code2, Loader2, Save, AlertTriangle, X, Sparkles, BookOpen, Undo2 } from "lucide-react";
 import api, { fehlerText } from "../api/client";
 import TabellenSuche from "../components/baukasten/TabellenSuche";
+import VorschauDiagramm from "../components/baukasten/VorschauDiagramm";
 import { useProject } from "../context/ProjectContext";
 import {
   ART, OPS, OHNE_WERT, PROFI_FARBE, Stein, Nutzlast, liste, kindKey, blockId, simuliere, alleStellen, platzFuer, gueltig,
@@ -111,6 +112,10 @@ const CSS = `
 
 /* Vorschau */
 .bk-vorschau { padding: 12px; min-width: 0; position: sticky; top: 10px; }
+.bk-ansicht { display: inline-flex; border: 1px solid var(--border); border-radius: 7px; overflow: hidden; margin: 0 0 8px; }
+.bk-ansicht button { background: none; border: 0; color: var(--text-dim); font-size: 12px; padding: 4px 11px; cursor: pointer; }
+.bk-ansicht button + button { border-left: 1px solid var(--border); }
+.bk-ansicht button[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--text-bright); font-weight: 600; }
 .bk-tbl { overflow: auto; border: 1px solid var(--border); border-radius: 8px; max-height: 380px; }
 .bk-tbl table { border-collapse: collapse; width: 100%; font-size: 12px; font-variant-numeric: tabular-nums; }
 .bk-tbl th { position: sticky; top: 0; background: var(--bg-elevated); color: var(--text-dim); font-weight: 600; text-align: left; padding: 6px 8px; white-space: nowrap; }
@@ -178,6 +183,7 @@ export default function Baukasten() {
   const [profiVerwerfen, setProfiVerwerfen] = useState(false);
   const [speichert, setSpeichert] = useState(false);
   const [rezepte, setRezepte] = useState<any[]>([]);
+  const [ansicht, setAnsicht] = useState<"tabelle" | "balken" | "linie" | null>(null);
   const [cockpits, setCockpits] = useState<{ id: number; name: string; reiter: { id: string; label: string }[] }[]>([]);
   const [imCockpit, setImCockpit] = useState<{ form_id: number; name: string; reiter: string | null } | null>(null);
   const [kiText, setKiText] = useState("");
@@ -525,6 +531,9 @@ export default function Baukasten() {
   }, [kette]);
 
   const v = erg?.vorschau;
+  const ausgabeStein = kette[kette.length - 1]?.type === "ausgabe" ? kette[kette.length - 1] : null;
+  const amEnde = !!ausgabeStein && v?.block === `:${kette.length - 1}`;
+  const zeigeAls = ansicht ?? (ausgabeStein?.target === "Balken im Cockpit" ? "balken" : ausgabeStein?.target === "Linie im Cockpit" ? "linie" : "tabelle");
   const vorschauName = fluss.find(([fid]) => fid === v?.block)?.[1] || (v?.block?.endsWith(":fremd") ? "dazugeholte Tabelle" : "");
 
   return (
@@ -631,6 +640,14 @@ export default function Baukasten() {
           {v && <p className="bk-info">nach: <b>{vorschauName}</b>{v.zeilen?.length >= 50 ? " · die ersten 50" : ""}</p>}
           {v?.fehler && <p className="bk-info" style={{ color: "var(--err)" }}>{v.fehler}</p>}
           {v && v.spalten?.length > 0 && (
+            <div className="bk-ansicht" role="group" aria-label="Darstellung">
+              {(["tabelle", "balken", "linie"] as const).map((a) => (
+                <button key={a} aria-pressed={zeigeAls === a} onClick={() => setAnsicht(a)}>{a === "tabelle" ? "Tabelle" : a === "balken" ? "Balken" : "Linie"}</button>))}
+            </div>)}
+          {v && v.spalten?.length > 0 && zeigeAls !== "tabelle" && (
+            <VorschauDiagramm art={zeigeAls} spalten={v.spalten} zeilen={v.zeilen}
+              x={amEnde ? ausgabeStein?.x : undefined} y={amEnde ? ausgabeStein?.y : undefined} />)}
+          {v && v.spalten?.length > 0 && zeigeAls === "tabelle" && (
             <div className="bk-tbl"><table>
               <thead><tr>{v.spalten.map((c) => <th key={c}>{c}</th>)}</tr></thead>
               <tbody>{v.zeilen.map((r, k) => <tr key={k}>{v.spalten.map((c) => {
