@@ -11,14 +11,16 @@ export const ART: Record<string, { name: string; farbe: string; form: "hut" | "w
   rechnen:    { name: "Rechnen", farbe: "#b03c78", form: "stein", gruppe: "Schritte", text: "Neue Spalte aus zwei Werten – auch Tage seit einem Datum" },
   einteilen:  { name: "Einteilen", farbe: "#0f7c9c", form: "stein", gruppe: "Schritte", text: "Wenn … dann: Werte in Gruppen wie „groß/mittel/klein“" },
   verdichten: { name: "Zusammenfassen", farbe: "#d0640f", form: "trichter", gruppe: "Schritte", text: "Trichter: aus Zeilen werden Gruppen" },
+  spalten:    { name: "Spalten", farbe: "#8a5a2b", form: "stein", gruppe: "Schritte", text: "Auswählen, umbenennen, ordnen – fürs Cockpit" },
   sortieren:  { name: "Sortieren", farbe: "#4c6b5c", form: "stein", gruppe: "Schritte", text: "Reihenfolge festlegen" },
   begrenzen:  { name: "Nur die ersten", farbe: "#4c6b5c", form: "stein", gruppe: "Schritte", text: "z. B. die Top 10" },
   ausgabe:    { name: "Ausgabe", farbe: "#c8402f", form: "deckel", gruppe: "Ende", text: "Ergebnis – immer der letzte Stein" },
 };
 export const PROFI_FARBE = "#6b7178";
 
-export const OPS = ["=", "≠", ">", "<", "≥", "≤", "ist einer von", "enthält", "beginnt mit", "ist leer", "ist nicht leer", "im Jahr", "in den letzten Tagen", "im Zeitraum", "im Zeitraum + Vorjahr"];
-export const OHNE_WERT = new Set(["ist leer", "ist nicht leer", "im Zeitraum", "im Zeitraum + Vorjahr"]);
+export const OPS = ["=", "≠", ">", "<", "≥", "≤", "ist einer von", "enthält", "beginnt mit", "ist leer", "ist nicht leer", "im Jahr", "in den letzten Tagen", "im Zeitraum", "im Zeitraum + Vorjahr", "im Cockpit wählbar"];
+export const WAEHLBAR = "im Cockpit wählbar";
+export const OHNE_WERT = new Set(["ist leer", "ist nicht leer", "im Zeitraum", "im Zeitraum + Vorjahr", WAEHLBAR]);
 export const RECHENARTEN = ["+", "−", "×", "÷", "Tage bis heute", "Tage zwischen"];
 
 export function neu(t: string): Stein {
@@ -30,6 +32,7 @@ export function neu(t: string): Stein {
     case "rechnen": return { type: "rechnen", name: "Neue Spalte", a: "", op: "÷", b: "" };
     case "einteilen": return { type: "einteilen", name: "Gruppe", col: "", regeln: [{ op: "≥", val: "", wert: "" }], sonst: "" };
     case "verdichten": return { type: "verdichten", by: ["", ""], aggs: [{ fn: "Summe", col: "" }, { fn: "Anzahl" }] };
+    case "spalten": return { type: "spalten", liste: [] };
     case "sortieren": return { type: "sortieren", col: "", dir: "absteigend" };
     case "begrenzen": return { type: "begrenzen", n: 10 };
     case "ausgabe": return { type: "ausgabe", target: "Tabelle im Cockpit" };
@@ -63,7 +66,7 @@ export function gueltig(c: Stein[]): boolean {
     if (t === "start" && i !== 0) return false;
     if (t === "join") return false;
     if (t === "tabelle") { if (tab >= 0) return false; tab = i; if (!gueltigInnen(c[i].inner || [], "tabelle")) return false; }
-    if (["rechnen", "einteilen", "sortieren", "begrenzen", "verdichten", "profi", "ausgabe", "filter"].includes(t) && tab < 0) return false;
+    if (["rechnen", "einteilen", "spalten", "sortieren", "begrenzen", "verdichten", "profi", "ausgabe", "filter"].includes(t) && tab < 0) return false;
     if (t === "filter" && verd < 0) return false;          // oben nur als Kennzahl-Prüfung nach dem Trichter
     if (t === "verdichten") { if (verd >= 0) return false; verd = i; }
     if (t === "ausgabe" && i !== c.length - 1) return false;
@@ -125,7 +128,8 @@ export const HILFE: Record<string, string> = {
   start: "Wann die Auswertung läuft. Im Cockpit: jedes Mal, wenn es geöffnet oder der Zeitraum geändert wird.",
   tabelle: "Die Tabelle, aus der die Zeilen kommen. Alles im Winkel gilt für sie: „Nur wenn“ filtert ihre Zeilen, „Dazuholen“ verknüpft weitere Tabellen.",
   join: "Holt Spalten aus einer zweiten Tabelle dazu – über eine Spalte, die in beiden vorkommt (z. B. Kundennummer). „nur Zeilen mit Treffer“ wirft Zeilen ohne Partner weg, „auch ohne Treffer“ behält sie, „nur OHNE Treffer“ zeigt genau die ohne Partner (z. B. Kunden ohne Rechnung). „Nur wenn“ im Winkel grenzt die zweite Tabelle ein.",
-  filter: "Behält nur Zeilen, die die Bedingung erfüllen. „im Zeitraum“ nimmt den Zeitraum des Cockpits; „im Zeitraum + Vorjahr“ behält zusätzlich dieselbe Spanne ein Jahr davor – „Zusammenfassen“ zeigt dann je Kennzahl eine Vorjahresspalte. Nach dem Trichter prüft „Nur wenn“ eine Kennzahl (z. B. Umsatz > 1000).",
+  filter: "Behält nur Zeilen, die die Bedingung erfüllen. „im Zeitraum“ nimmt den Zeitraum des Cockpits; „im Zeitraum + Vorjahr“ behält zusätzlich dieselbe Spanne ein Jahr davor – „Zusammenfassen“ zeigt dann je Kennzahl eine Vorjahresspalte. Nach dem Trichter prüft „Nur wenn“ eine Kennzahl (z. B. Umsatz > 1000). „im Cockpit wählbar“ legt im Cockpit eine Auswahlliste mit den Werten der Spalte an (z. B. Land) – nichts gewählt heißt alle.",
+  spalten: "Bestimmt, welche Spalten ins Ergebnis kommen, in welcher Reihenfolge und unter welchem Namen – z. B. „Summe fWert“ als „Umsatz“. „Alle übernehmen“ holt die vorhandenen Spalten als Liste, dann einfach umbenennen, verschieben oder entfernen. Steht „Sortieren“ darunter, sortiert es nach den neuen Namen.",
   rechnen: "Neue Spalte aus zwei Werten: plus, minus, mal, geteilt (Zahl oder Spalte). „Tage bis heute“ zählt die Tage seit einem Datum, „Tage zwischen“ die Tage zwischen zwei Datumsspalten.",
   einteilen: "Ordnet jede Zeile einer Gruppe zu: die erste passende Regel gewinnt, sonst gilt „sonst“. Beispiel: Rechnungsbetrag ≥ 1000 → groß, ≥ 100 → mittel, sonst klein. Danach lässt sich nach der neuen Spalte zusammenfassen.",
   verdichten: "Der Trichter: aus vielen Zeilen werden Gruppen – je Kunde, je Monat, … – mit Summe, Durchschnitt, Höchst-/Tiefstwert oder Anzahl. Nur ein Trichter je Auswertung.",

@@ -16,7 +16,7 @@ import VorschauDiagramm from "../components/baukasten/VorschauDiagramm";
 import Tour, { TOUR_KEY } from "../components/baukasten/Tour";
 import { useProject } from "../context/ProjectContext";
 import {
-  ART, HILFE, OPS, OHNE_WERT, RECHENARTEN, PROFI_FARBE, Stein, Nutzlast, liste, kindKey, blockId, simuliere, alleStellen, platzFuer, gueltig,
+  ART, HILFE, OPS, OHNE_WERT, WAEHLBAR, RECHENARTEN, PROFI_FARBE, Stein, Nutzlast, liste, kindKey, blockId, simuliere, alleStellen, platzFuer, gueltig,
 } from "../components/baukasten/regeln";
 
 const CSS = `
@@ -370,7 +370,9 @@ export default function Baukasten() {
   const vorherZahl = (key: string, i: number): number | undefined => {
     if (key === "") { for (let j = i - 1; j >= 0; j--) if (z[`:${j}`] != null) return z[`:${j}`]; return undefined; }
     if (!key.includes(".")) return i === 0 ? z[`:${key}:kopf`] : z[`${key}:${i - 1}`];
-    return i === 0 ? z[`${key.split(".")[0]}:${key.split(".")[1]}:fremd`] : z[`${key}:${i - 1}`];
+    // erster „Nur wenn“ in „Dazuholen“: die Gesamtzahl der dazugeholten Tabelle wird nicht gezählt
+    // („… passen“ unten ist schon nach allen Filtern) – also keine Vorher-Zahl statt einer falschen
+    return i === 0 ? undefined : z[`${key}:${i - 1}`];
   };
 
   function steinHTML(b: Stein, key: string, i: number) {
@@ -399,10 +401,13 @@ export default function Baukasten() {
           <div className={cls()} style={{ "--c": farbe } as any} {...ziehbar}><Noppen />
             <span className="t">{oben ? "Nur Gruppen mit" : "Nur wenn"}</span>
             <span className="bk-hex">{sel("Spalte", spalten, b.col, (v) => aendern(key, i, { col: v }))}
-              {sel("Vergleich", OPS, b.op, (v) => aendern(key, i, { op: v }), null, "bk-op")}
+              {sel("Vergleich", oben ? OPS.filter((o) => o !== WAEHLBAR) : OPS, b.op, (v) => aendern(key, i, { op: v }), null, "bk-op")}
               {!OHNE_WERT.has(b.op) && <input className={`bk-oval${String(b.val ?? "").trim() === "" ? " leer" : ""}`} value={b.val ?? ""} placeholder={b.op === "ist einer von" ? "Wert 1, Wert 2 …" : "Wert"}
                 aria-label="Wert" onClick={(e) => e.stopPropagation()} onChange={(e) => aendern(key, i, { val: e.target.value })} />}
               {b.op === "im Zeitraum" && <span className="bk-tag">Zeitraum des Cockpits</span>}
+              {b.op === WAEHLBAR && <><input className="bk-oval" value={b.label ?? ""} placeholder={b.col || "Beschriftung"} aria-label="Beschriftung der Auswahlliste im Cockpit"
+                title="So heißt die Auswahlliste im Cockpit" onClick={(e) => e.stopPropagation()} onChange={(e) => aendern(key, i, { label: e.target.value })} />
+                <span className="bk-tag" title="Im Cockpit erscheint eine Auswahlliste mit den Werten dieser Spalte – nichts gewählt heißt alle">Auswahlliste im Cockpit</span></>}
               {b.op === "im Zeitraum + Vorjahr" && <span className="bk-tag" title="„Zusammenfassen“ zeigt danach je Kennzahl den Zeitraum und dieselbe Spanne ein Jahr davor">Zeitraum + Vorjahr → Vergleichsspalten</span>}
             </span>
             {zahl(bid, true, vorherZahl(key, i))}{weg(key, i)}{warnung(bid)}
@@ -435,7 +440,7 @@ export default function Baukasten() {
           {regeln.map((r, k) => (
             <span key={k} className="bk-hex" style={{ flexBasis: "100%" }}>
               <span>{k === 0 ? "wenn" : "sonst wenn"}</span>
-              {sel("Vergleich", OPS.filter((o) => !["im Zeitraum", "im Zeitraum + Vorjahr"].includes(o)), r.op, (v) => setzeRegel(k, { op: v }), null, "bk-op")}
+              {sel("Vergleich", OPS.filter((o) => !["im Zeitraum", "im Zeitraum + Vorjahr", WAEHLBAR].includes(o)), r.op, (v) => setzeRegel(k, { op: v }), null, "bk-op")}
               {!OHNE_WERT.has(r.op) && <input className="bk-oval kurz" value={r.val ?? ""} placeholder="Wert" aria-label="Wert" onClick={(e) => e.stopPropagation()} onChange={(e) => setzeRegel(k, { val: e.target.value })} />}
               <span>→</span>
               <input className="bk-oval" value={r.wert ?? ""} placeholder="z. B. groß" aria-label="Gruppe" onClick={(e) => e.stopPropagation()} onChange={(e) => setzeRegel(k, { wert: e.target.value })} />
@@ -445,6 +450,32 @@ export default function Baukasten() {
             <button className="bk-tag" style={{ cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); aendern(key, i, { regeln: [...regeln, { op: regeln[regeln.length - 1]?.op || "=", val: "", wert: "" }] }); }}>＋ Regel</button>
             <span>sonst →</span>
             <input className="bk-oval" value={b.sonst ?? ""} placeholder="z. B. klein (leer = nichts)" aria-label="sonst" onClick={(e) => e.stopPropagation()} onChange={(e) => aendern(key, i, { sonst: e.target.value })} />
+          </span>
+        </div>);
+      }
+      case "spalten": {
+        const l: { col: string; als?: string }[] = b.liste || [];
+        const setze = (neu: typeof l) => aendern(key, i, { liste: neu });
+        const schiebe = (k: number, um: number) => { const n = [...l]; const [x] = n.splice(k, 1); n.splice(k + um, 0, x); setze(n); };
+        return (
+        <div className={cls()} style={{ "--c": farbe } as any} {...ziehbar}><Noppen />
+          <span className="t">Spalten</span>
+          {!l.length && <span className="bk-tag">alle bleiben – auswählen, was ins Ergebnis soll</span>}
+          {zahl(bid, false)}{weg(key, i)}
+          {l.map((x, k) => (
+            <span key={k} className="bk-hex" style={{ flexBasis: "100%" }}>
+              {sel("Spalte", cols, x.col, (v) => setze(l.map((y, n) => n === k ? { ...y, col: v } : y)))}
+              <span>als</span>
+              <input className="bk-oval" value={x.als ?? ""} placeholder={x.col || "Name"} aria-label="Name im Ergebnis" onClick={(e) => e.stopPropagation()}
+                onChange={(e) => setze(l.map((y, n) => n === k ? { ...y, als: e.target.value } : y))} />
+              <button className="bk-x" title="nach oben" aria-label="nach oben" disabled={k === 0} onClick={(e) => { e.stopPropagation(); schiebe(k, -1); }}>↑</button>
+              <button className="bk-x" title="nach unten" aria-label="nach unten" disabled={k === l.length - 1} onClick={(e) => { e.stopPropagation(); schiebe(k, 1); }}>↓</button>
+              <button className="bk-x" title="Spalte weglassen" aria-label="Spalte weglassen" onClick={(e) => { e.stopPropagation(); setze(l.filter((_, n) => n !== k)); }}>×</button>
+            </span>))}
+          <span className="bk-hex" style={{ flexBasis: "100%" }}>
+            <button className="bk-tag" style={{ cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); setze([...l, { col: "", als: "" }]); }}>＋ Spalte</button>
+            {cols.some((c) => !l.find((x) => x.col === c)) && <button className="bk-tag" style={{ cursor: "pointer" }} title="Alle vorhandenen Spalten als Liste übernehmen"
+              onClick={(e) => { e.stopPropagation(); setze([...l.filter((x) => x.col), ...cols.filter((c) => !l.find((x) => x.col === c)).map((c) => ({ col: c, als: "" }))]); }}>alle übernehmen</button>}
           </span>
         </div>);
       }
@@ -489,6 +520,8 @@ export default function Baukasten() {
             </>}
             {zahl(bid, false)}{weg(key, i)}
             {imC && !b.cockpit && <span className="bk-tag" style={{ flexBasis: "100%" }}>Ohne Cockpit wird nur die Auswertung gespeichert.</span>}
+            {imC && b.cockpit && erg?.auswahl?.length > 0 && <span className="bk-tag" style={{ flexBasis: "100%" }}>
+              Das Cockpit bekommt {erg.auswahl.length === 1 ? "die Auswahlliste" : "die Auswahllisten"} {erg.auswahl.map((a: any) => `„${a.label}“`).join(", ")}.</span>}
             {imC && diagramm && sp.length > 0 && (
               <span className="bk-hex" style={{ flexBasis: "100%", flexWrap: "wrap" }}>
                 <span>Achse</span>{sel("Achse", sp.map((x) => x.name), b.x || "", (v) => aendern(key, i, { x: v }), "automatisch")}

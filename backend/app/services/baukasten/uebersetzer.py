@@ -61,7 +61,7 @@ def pruefen(kette: list) -> None:
                 raise BaukastenFehler("Nur eine Tabelle auf oberster Ebene – weitere über „Dazuholen“.")
             tab = i
             _innen_pruefen(b.get("inner") or [], "tabelle")
-        elif t in ("rechnen", "einteilen", "sortieren", "begrenzen", "verdichten", "ausgabe", "filter", "profi") and tab < 0:
+        elif t in ("rechnen", "einteilen", "spalten", "sortieren", "begrenzen", "verdichten", "ausgabe", "filter", "profi") and tab < 0:
             raise BaukastenFehler("Zuerst eine Tabelle, dann die Schritte.")
         if t == "filter" and verd < 0:
             raise BaukastenFehler("„Nur wenn“ auf oberster Ebene prüft eine Kennzahl und steht deshalb nach „Zusammenfassen“.")
@@ -71,7 +71,7 @@ def pruefen(kette: list) -> None:
             verd = i
         if t == "ausgabe" and i != len(kette) - 1:
             raise BaukastenFehler("Die Ausgabe ist immer der letzte Stein.")
-        if t not in ("start", "tabelle", "filter", "rechnen", "einteilen", "verdichten", "sortieren", "begrenzen", "ausgabe", "profi"):
+        if t not in ("start", "tabelle", "filter", "rechnen", "einteilen", "spalten", "verdichten", "sortieren", "begrenzen", "ausgabe", "profi"):
             raise BaukastenFehler(f"Unbekannter Stein: {t!r}")
     if tab < 0:
         raise BaukastenFehler("Es fehlt eine Tabelle.")
@@ -190,7 +190,8 @@ def vorschau_begrenzen(sql: str, n: int, dialekt: str) -> str:
 
 # ── Übersetzen ─────────────────────────────────────────────────────────────
 OPS = ("=", "≠", ">", "<", "≥", "≤", "ist einer von", "enthält", "beginnt mit", "ist leer", "ist nicht leer",
-       "im Jahr", "in den letzten Tagen", "im Zeitraum", "im Zeitraum + Vorjahr")
+       "im Jahr", "in den letzten Tagen", "im Zeitraum", "im Zeitraum + Vorjahr", "im Cockpit wählbar")
+WAEHLBAR = "im Cockpit wählbar"
 DATUM_OPS = ("Tage bis heute", "Tage zwischen")
 RECHEN_OPS = {"+": "+", "−": "-", "-": "-", "×": "*", "*": "*", "÷": "/", "/": "/"}
 AGG = {"Summe": "SUM", "Durchschnitt": "AVG", "Höchstwert": "MAX", "Tiefstwert": "MIN", "Anzahl": "COUNT"}
@@ -214,6 +215,14 @@ class Ergebnis:
     spalten_je_block: dict[str, list[str]] = field(default_factory=dict)  # was an einem Stein ankommt (für die Auswahllisten)
     params: dict = field(default_factory=dict)
     nutzt_zeitraum: bool = False
+    # „im Cockpit wählbar“: je Feld {"param", "label", "table", "column"} – das Cockpit bekommt dafür eine Auswahlliste
+    auswahl: list = field(default_factory=list)
+
+
+def auswahl_param(tabelle: str, spalte: str) -> str:
+    """Parametername eines Cockpit-Auswahlfelds: nur Buchstaben/Ziffern/_, damit er als :name bindbar ist."""
+    roh = f"{tabelle.split('.')[-1]}_{spalte}"
+    return "bk_" + re.sub(r"[^A-Za-z0-9_]", "_", roh)[:50]
 
 
 def uebersetzen(kette: list, schema: Schema, dialekt: str = "mssql", literal: bool = False) -> Ergebnis:
@@ -221,7 +230,7 @@ def uebersetzen(kette: list, schema: Schema, dialekt: str = "mssql", literal: bo
     pruefen(kette)
     d = Dialekt(dialekt)
     bind = _Binder(literal=literal)
-    ctx = {"zeitraum": False, "vj_spalte": None}
+    ctx = {"zeitraum": False, "vj_spalte": None, "auswahl": {}}
     stufen: list[Stufe] = []
     erg = Ergebnis(sql="", spalten=[])
 
@@ -239,7 +248,7 @@ def uebersetzen(kette: list, schema: Schema, dialekt: str = "mssql", literal: bo
             erg.vorschau_sql[block_id] = f"{cte_sql(bis_stufe)}\nSELECT * FROM {s.name}"
 
     spalten: list[Spalte] = []
-    sortierung = None
+    sortierung = None            # (Spalte, Richtung) – Name kann ein späterer Stein „Spalten“ noch ändern
     limit = None
     for i, b in enumerate(kette):
         t = b.get("type")
@@ -305,6 +314,32 @@ def uebersetzen(kette: list, schema: Schema, dialekt: str = "mssql", literal: bo
             vorher = stufen[-1]
             stufen.append(Stufe(f"s{len(stufen)}", f"SELECT *, {ausdruck} AS {d.q(name)} FROM {vorher.name}", spalten + [Spalte(name, "text")]))
             spalten = stufen[-1].spalten
+            merken(bid, spalten_in, len(stufen) - 1)
+        elif t == "spalten":
+            spalten_in = spalten
+            liste = [x for x in (b.get("liste") or [])[:80] if isinstance(x, dict) and x.get("col")]
+            if not liste:                         # noch nichts gewählt: alle Spalten bleiben
+                merken(bid, spalten_in, len(stufen) - 1)
+                continue
+            aus, neu, umbenannt = [], [], {}
+            for x in liste:
+                s = _spalte(x.get("col"), spalten)
+                als = _name(x.get("als") or s.name)
+                if any(n.name.lower() == als.lower() for n in neu):
+                    raise BaukastenFehler(f"Spalten: „{als}“ kommt zweimal vor – anderen Namen wählen.")
+                aus.append(f"{d.q(s.name)} AS {d.q(als)}")
+                neu.append(Spalte(als, s.typ))
+                umbenannt.setdefault(s.name, als)
+            if sortierung:
+                if sortierung[0] not in umbenannt:
+                    raise BaukastenFehler(f"„Sortieren“ steht vor „Spalten“ und nutzt „{sortierung[0]}“, das danach fehlt – "
+                                          "„Sortieren“ unter „Spalten“ setzen oder die Spalte behalten.")
+                sortierung = (umbenannt[sortierung[0]], sortierung[1])
+            if ctx["vj_spalte"]:
+                ctx["vj_spalte"] = umbenannt.get(ctx["vj_spalte"])
+            vorher = stufen[-1]
+            stufen.append(Stufe(f"s{len(stufen)}", f"SELECT {', '.join(aus)} FROM {vorher.name}", neu))
+            spalten = neu
             merken(bid, spalten_in, len(stufen) - 1)
         elif t == "verdichten":
             spalten_in = spalten
@@ -377,7 +412,7 @@ def uebersetzen(kette: list, schema: Schema, dialekt: str = "mssql", literal: bo
             erg.spalten_je_block[bid] = [x.name for x in spalten]
         elif t == "sortieren":
             s = _spalte(b.get("col"), spalten)
-            sortierung = f"{d.q(s.name)} {'DESC' if b.get('dir') != 'aufsteigend' else 'ASC'}"
+            sortierung = (s.name, "DESC" if b.get("dir") != "aufsteigend" else "ASC")
             erg.spalten_je_block[bid] = [x.name for x in spalten]
         elif t == "begrenzen":
             try:
@@ -390,7 +425,7 @@ def uebersetzen(kette: list, schema: Schema, dialekt: str = "mssql", literal: bo
 
     letzte = stufen[-1].name
     cte = cte_sql(len(stufen) - 1)
-    order = f"\nORDER BY {sortierung}" if sortierung else ""
+    order = f"\nORDER BY {d.q(sortierung[0])} {sortierung[1]}" if sortierung else ""
     if d.name == "mssql":
         # TOP gehört ins äußere SELECT (nicht vor WITH); ORDER BY nur ganz außen
         kern = f"SELECT TOP ({limit}) * FROM {letzte}" if limit else f"SELECT * FROM {letzte}"
@@ -401,15 +436,19 @@ def uebersetzen(kette: list, schema: Schema, dialekt: str = "mssql", literal: bo
         lim = f"\nLIMIT {limit}" if limit else ""
         final = f"{cte}\nSELECT * FROM {letzte}{order}{lim}"
         zaehl = f"{cte}\nSELECT COUNT(*) AS n FROM (SELECT * FROM {letzte}{order}{lim}) z"
-    # Sortieren/Begrenzen/Ausgabe zeigen das Endergebnis
+    # Sortieren/Begrenzen/Ausgabe zeigen das Endergebnis – ebenso „Spalten“ darunter (sonst stünde dort die Zahl
+    # vor „Nur die ersten“, obwohl am Ende nur diese Zeilen ankommen)
+    ab_ende = False
     for i, b in enumerate(kette):
-        if b.get("type") in ("sortieren", "begrenzen", "ausgabe", "profi"):
+        ab_ende = ab_ende or b.get("type") in ("sortieren", "begrenzen")
+        if b.get("type") in ("sortieren", "begrenzen", "ausgabe", "profi") or (ab_ende and b.get("type") == "spalten"):
             erg.zaehl_sql[f":{i}"] = zaehl
             erg.vorschau_sql[f":{i}"] = final
     erg.sql = final
     erg.spalten = spalten
     erg.params = dict(bind.werte)
     erg.nutzt_zeitraum = ctx["zeitraum"]
+    erg.auswahl = list(ctx["auswahl"].values())
     return erg
 
 
@@ -426,6 +465,7 @@ def _tabelle(b, i, schema: Schema, d: Dialekt, bind, ctx, stufen: list, merken) 
     joins: list[str] = []
     auswahl = [f"{alias}.{d.q(s.name)} AS {d.q(s.name)}" for s in basis]
     spalten = list(basis)
+    herkunft = {s.name: (haupt, s.name) for s in basis}      # Spaltenname → (Tabelle, echte Spalte) für Auswahllisten
     n_join = 0
 
     def aktueller_sql() -> str:
@@ -437,7 +477,7 @@ def _tabelle(b, i, schema: Schema, d: Dialekt, bind, ctx, stufen: list, merken) 
         spalten_in = list(spalten)
         if x.get("type") == "filter":
             # Filter im Winkel prüfen die Haupttabelle oder bereits dazugeholte Spalten
-            bed = _bedingung(x, spalten, d, bind, ctx, alias=None, quelle=_quellen(auswahl))
+            bed = _bedingung(x, spalten, d, bind, ctx, alias=None, quelle=_quellen(auswahl), herkunft=herkunft)
             if bed:
                 wo.append(bed)
             merken(bid, spalten_in, None, roh_sql=aktueller_sql())
@@ -453,7 +493,7 @@ def _tabelle(b, i, schema: Schema, d: Dialekt, bind, ctx, stufen: list, merken) 
             # Filter in „Dazuholen“ wirken auf die dazugeholte Tabelle (Unterabfrage)
             fwo = []
             for k, f in enumerate(x.get("inner") or []):
-                bed = _bedingung(f, fspalten, d, bind, ctx, alias=None)
+                bed = _bedingung(f, fspalten, d, bind, ctx, alias=None, herkunft={s.name: (fremd, s.name) for s in fspalten})
                 if bed:
                     fwo.append(bed)
                 sub = f"SELECT * FROM {d.tabelle(fremd)}" + (f"\nWHERE {' AND '.join(fwo)}" if fwo else "")
@@ -479,6 +519,7 @@ def _tabelle(b, i, schema: Schema, d: Dialekt, bind, ctx, stufen: list, merken) 
                     continue
                 auswahl.append(f"{ja}.{d.q(s.name)} AS {d.q(name)}")
                 spalten.append(Spalte(name, s.typ))
+                herkunft[name] = (fremd, s.name)
                 vorhanden.add(name.lower())
             merken(bid, spalten_in, None, roh_sql=aktueller_sql())
             # Zähler „x von y passen“ der dazugeholten Tabelle
@@ -520,7 +561,8 @@ def _operand(x, spalten: list[Spalte], d: Dialekt, bind) -> str:
         raise BaukastenFehler(f"Rechnen: „{x}“ ist weder Spalte noch Zahl.")
 
 
-def _bedingung(b: dict, spalten: list[Spalte], d: Dialekt, bind, ctx, alias=None, quelle: dict | None = None) -> str:
+def _bedingung(b: dict, spalten: list[Spalte], d: Dialekt, bind, ctx, alias=None, quelle: dict | None = None,
+               herkunft: dict | None = None) -> str:
     """Eine Bedingung → SQL. Leerer Wert = Stein wirkt (noch) nicht (wie im Prototyp)."""
     op = b.get("op") or "="
     if op not in OPS:
@@ -535,6 +577,16 @@ def _bedingung(b: dict, spalten: list[Spalte], d: Dialekt, bind, ctx, alias=None
         return f"({x} IS NULL OR {d.text(x)} = '')" if s.typ == "text" else f"{x} IS NULL"
     if op == "ist nicht leer":
         return f"({x} IS NOT NULL AND {d.text(x)} <> '')" if s.typ == "text" else f"{x} IS NOT NULL"
+    if op == WAEHLBAR:
+        # Wert kommt aus einer Auswahlliste im Cockpit (Mehrfachauswahl); nichts gewählt = alle Zeilen.
+        # :p wird beim Lauf zu :p__0, :p__1 … aufgefächert, :p_empty bindet der Lauf selbst (sql_helpers).
+        if not herkunft or s.name not in herkunft:
+            raise BaukastenFehler("„im Cockpit wählbar“ geht nur im Winkel einer Tabelle (nicht nach dem Trichter).")
+        tabelle, echt = herkunft[s.name]
+        p = auswahl_param(tabelle, echt)
+        label = re.sub(r"[\x00-\x1f]", "", str(b.get("label") or "")).strip()[:60] or s.name
+        ctx["auswahl"].setdefault(p, {"param": p, "label": label, "table": tabelle, "column": echt})
+        return f"(:{p}_empty = 1 OR {x} IN (:{p}))"
     if op in ("im Zeitraum", "im Zeitraum + Vorjahr"):
         if s.typ != "datum":
             raise BaukastenFehler(f"„{op}“ geht nur bei Datumsspalten – „{s.name}“ ist keine.")

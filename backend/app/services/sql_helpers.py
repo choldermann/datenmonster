@@ -133,6 +133,14 @@ def _resolve_sql_run_params(sql: str, run_params: dict):
         prev_month_last_day = datetime.date.today().replace(day=1) - datetime.timedelta(days=1)
         default_year, default_month = prev_month_last_day.year, prev_month_last_day.month
 
+    # Listen-Parameter mit Begleit-Flag :name_empty (z. B. Auswahlfelder aus dem Baukasten): fehlt der Wert
+    # (Zeitplan, Export ohne Formular) oder ist er leer, gilt „nichts gewählt = alle“ statt eines Bindefehlers;
+    # ein Einzelwert wird zur Liste mit einem Eintrag.
+    for name in list(referenced):
+        if f"{name}_empty" in referenced and not isinstance(run_params.get(name), (list, tuple, set)):
+            v = run_params.get(name)
+            run_params = {**run_params, name: [] if v is None or v == "" else [v]}
+
     params = {}
     for name in referenced:
         if name in run_params:

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
 from datetime import date, timedelta
 
@@ -74,9 +75,17 @@ def rechnen(db, user, connection_id: int, kette: list, zeige: str | None = None,
     if conn.db_type == "mssql":
         von, bis = von.replace("-", ""), bis.replace("-", "")
     params = {**erg.params, "von": von, "bis": bis}
+    # Auswahlfelder des Cockpits: in der Vorschau ist nichts gewählt → alle Zeilen
+    for a in erg.auswahl:
+        params[f"{a['param']}_empty"] = 1
+
+    def ohne_auswahl(sql: str) -> str:
+        for a in erg.auswahl:
+            sql = re.sub(r":" + re.escape(a["param"]) + r"(?![A-Za-z0-9_])", "NULL", sql)
+        return sql
 
     def gebunden(sql: str) -> dict:
-        return {k: v for k, v in params.items() if f":{k}" in sql}
+        return {k: v for k, v in params.items() if re.search(r":" + re.escape(k) + r"(?![A-Za-z0-9_])", sql)}
 
     eng = _get_sql_engine(connection_id)
     zaehler, fehler = {}, {}
@@ -86,13 +95,14 @@ def rechnen(db, user, connection_id: int, kette: list, zeige: str | None = None,
             if time.monotonic() - start > ZAEHL_BUDGET_S:
                 fehler[bid] = "übersprungen (Zeitbudget)"
                 continue
+            sql = ohne_auswahl(sql)
             try:
                 zaehler[bid] = int(con.execute(text(sql), gebunden(sql)).scalar() or 0)
             except Exception as e:
                 fehler[bid] = str(e).split("\n")[0][:240]
                 logger.info("Baukasten-Zähler %s: %s", bid, fehler[bid])
         ziel = zeige if zeige in erg.vorschau_sql else next(reversed(erg.vorschau_sql))
-        vsql = vorschau_begrenzen(erg.vorschau_sql[ziel], VORSCHAU_ZEILEN, conn.db_type)
+        vsql = ohne_auswahl(vorschau_begrenzen(erg.vorschau_sql[ziel], VORSCHAU_ZEILEN, conn.db_type))
         try:
             res = con.execute(text(vsql), gebunden(vsql))
             spalten = list(res.keys())
@@ -106,6 +116,7 @@ def rechnen(db, user, connection_id: int, kette: list, zeige: str | None = None,
         "spalten_je_block": erg.spalten_je_block,
         "spalten": [{"name": s.name, "typ": s.typ} for s in erg.spalten],
         "sql": gespeichert.sql, "nutzt_zeitraum": erg.nutzt_zeitraum,
+        "auswahl": [{"param": a["param"], "label": a["label"]} for a in erg.auswahl],
         "zeitraum": {"von": von, "bis": bis},
     }
 
@@ -211,7 +222,8 @@ def _widget_config(art: str, ausgabe: dict, spalten: list) -> dict:
     return {"width": 3, "column": wert, "aggregation": "sum", "decimals": 2}
 
 
-def ins_cockpit(db, user, project_id, mapping, kette: list, spalten: list, nutzt_zeitraum: bool) -> dict | None:
+def ins_cockpit(db, user, project_id, mapping, kette: list, spalten: list, nutzt_zeitraum: bool,
+                auswahl: list | None = None, connection_id: int | None = None) -> dict | None:
     """Widget für das Mapping in ein Cockpit (Formular) stellen – vorhandenes aktualisieren statt doppeln.
 
     Ausgabe-Stein: {"target": "Balken im Cockpit", "cockpit": <form_id>|"neu", "cockpit_name": "…",
@@ -249,6 +261,20 @@ def ins_cockpit(db, user, project_id, mapping, kette: list, spalten: list, nutzt
                                     "label": "Zeitraum", "name": "zeitraum", "action_ids": [],
                                     "config": {"param_from": "von", "param_to": "bis", "default": "this_year",
                                                "auto_run": True}})
+    # „im Cockpit wählbar“: je Spalte eine Auswahlliste (Mehrfachauswahl, leer = alle) – gleicher Name = gleiches
+    # Feld, so filtert eine Auswahl alle Auswertungen des Cockpits, die dieselbe Spalte wählbar machen.
+    namen = {f.get("name") for f in schema["fields"]}
+    pos = next((k + 1 for k, f in enumerate(schema["fields"]) if f.get("type") == "daterange"), 0)
+    for a in auswahl or []:
+        if a["param"] in namen:
+            continue
+        schema["fields"].insert(pos, {
+            "id": f"f_{a['param']}", "type": "db_dropdown", "row": 0, "colSpan": 4, "label": a["label"],
+            "name": a["param"], "action_ids": [],
+            "config": {"connection_id": connection_id, "kind": "spalte", "table": a["table"], "column": a["column"],
+                       "multiple": True, "auto_run": True}})
+        pos += 1
+        namen.add(a["param"])
     aktion = next((a for a in schema["actions"] if a.get("type") == "run_mapping" and a.get("mapping_id") == mapping.id), None)
     if aktion is None:
         aktion = {"id": f"act_bk_{mapping.id}", "type": "run_mapping", "mapping_id": mapping.id,

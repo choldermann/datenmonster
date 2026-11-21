@@ -245,7 +245,9 @@ export default function FieldProperties({ field, onChange, actions, resultTabs }
                 <option value="kategorie">Kategorie</option>
                 <option value="plattform">Plattform</option>
                 <option value="papinet_partner">Papinet-Partner</option>
+                {cfg.kind === "spalte" && <option value="spalte">Werte einer Spalte (Baukasten)</option>}
               </select>
+              {cfg.kind === "spalte" && <div style={{ fontSize: 10, color: S.textDim, marginTop: 4, fontFamily: "monospace" }}>{cfg.table} · {cfg.column}</div>}
             </div>
           </Row>
           <Row>

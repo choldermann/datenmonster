@@ -138,15 +138,62 @@ def _check_lookup_access(connection_id: int, user: User, db: Session) -> None:
     raise HTTPException(403, "Kein Zugriff auf diese Verbindung")
 
 
+MAX_SPALTENWERTE = 1000
+
+
+def _feld_freigegeben(connection_id: int, table: str, column: str, user: User, db: Session) -> None:
+    """Portal-Benutzer: Werte einer Spalte nur, wenn ein für ihn sichtbares, veröffentlichtes Cockpit genau
+    diese Auswahlliste enthält – sonst könnte er über die Liste beliebige Spalten der Datenbank auslesen."""
+    if getattr(user, "is_admin", False) or not getattr(user, "is_portal_only", False):
+        return
+    from app.api.portal import _check_portal_access
+    for f in db.query(FormModel).filter(FormModel.published == True).all():
+        try:
+            _check_portal_access(f, user)
+        except HTTPException:
+            continue
+        for fld in (f.schema or {}).get("fields") or []:
+            c = fld.get("config") or {}
+            if (fld.get("type") == "db_dropdown" and c.get("kind") == "spalte" and c.get("table") == table
+                    and c.get("column") == column and str(c.get("connection_id")) == str(connection_id)):
+                return
+    raise HTTPException(403, "Kein Zugriff auf diese Auswahlliste")
+
+
+def _spalten_sql(db: Session, connection_id: int, table: str, column: str) -> str:
+    """Werte einer Spalte (Baukasten „im Cockpit wählbar“). Namen nur aus dem Schema-Cache, gequotet."""
+    from app.models.dataset import DbConnection as _DBC
+    from app.services.baukasten.uebersetzer import Dialekt, Schema
+    from app.services.schema_cache_service import get_cached_schema
+    conn = db.query(_DBC).filter(_DBC.id == connection_id).first()
+    if conn is None:
+        raise HTTPException(404, "Verbindung nicht gefunden")
+    schema = Schema(get_cached_schema(conn) or {})
+    if table not in schema.tabellen or column not in [s.name for s in schema.tabellen[table]]:
+        raise HTTPException(400, "Tabelle oder Spalte gibt es in dieser Datenbank nicht")
+    d = Dialekt(conn.db_type)
+    c, t = d.q(column), d.tabelle(table)
+    if d.name == "mssql":
+        return (f"SELECT DISTINCT TOP ({MAX_SPALTENWERTE}) {c} AS value, {c} AS label FROM {t} "
+                f"WHERE {c} IS NOT NULL ORDER BY 1")
+    return f"SELECT DISTINCT {c} AS value, {c} AS label FROM {t} WHERE {c} IS NOT NULL ORDER BY 1 LIMIT {MAX_SPALTENWERTE}"
+
+
 @router.get("/options")
-def options(connection_id: int, kind: str,
+def options(connection_id: int, kind: str, table: str | None = None, column: str | None = None,
             user: User = Depends(get_current_user),
             db: Session = Depends(get_db)):
-    """Liefert [{value, label}, ...] für eine vordefinierte Lookup-Art."""
-    sql = LOOKUP_QUERIES.get(kind)
+    """Liefert [{value, label}, ...] für eine vordefinierte Lookup-Art – oder („spalte“) die Werte einer Spalte."""
+    _check_lookup_access(connection_id, user, db)
+    if kind == "spalte":
+        if not table or not column:
+            raise HTTPException(400, "Tabelle und Spalte fehlen")
+        _feld_freigegeben(connection_id, table, column, user, db)
+        sql = _spalten_sql(db, connection_id, table, column)
+    else:
+        sql = LOOKUP_QUERIES.get(kind)
     if not sql:
         raise HTTPException(400, f"Unbekannte Lookup-Art: {kind}")
-    _check_lookup_access(connection_id, user, db)
 
     # Die Auswahlliste eines Filters muss aus derselben WaWi kommen wie die Zahlen
     # daneben – sonst wählt man einen Kunden, den es im aktiven Mandanten nicht gibt.
@@ -169,4 +216,5 @@ def options(connection_id: int, kind: str,
     return {"options": [
         {"value": str(r["value"]), "label": str(r["label"])}
         for _, r in df.iterrows()
+        if kind != "spalte" or str(r["value"]).strip() != ""
     ]}

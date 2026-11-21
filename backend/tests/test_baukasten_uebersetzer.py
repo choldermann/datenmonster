@@ -231,6 +231,54 @@ def test_neue_steine():
     assert e.nutzt_zeitraum
 
 
+
+def test_stein_spalten():
+    basis = [{"type": "tabelle", "table": "Rechnung.tRechnung", "inner": [
+        {"type": "join", "table": "dbo.tKunde", "links": "kKunde", "rechts": "kKunde", "inner": []}]},
+        {"type": "verdichten", "by": ["cFirma"], "aggs": [{"fn": "Summe", "col": "fWert"}, {"fn": "Anzahl"}]}]
+    sp = {"type": "spalten", "liste": [{"col": "Summe fWert", "als": "Umsatz"}, {"col": "cFirma", "als": "Kunde"}]}
+    # Sortieren davor: Name folgt der Umbenennung
+    e = uebersetzen(basis + [{"type": "sortieren", "col": "Summe fWert"}, sp], SCHEMA, literal=True)
+    assert [x.name for x in e.spalten] == ["Umsatz", "Kunde"]
+    assert "SELECT [Summe fWert] AS [Umsatz], [cFirma] AS [Kunde] FROM s1" in e.sql
+    assert e.sql.rstrip().endswith("ORDER BY [Umsatz] DESC"), e.sql
+    # danach: neue Namen
+    e = uebersetzen(basis + [sp, {"type": "sortieren", "col": "Umsatz", "dir": "aufsteigend"}], SCHEMA, literal=True)
+    assert e.sql.rstrip().endswith("ORDER BY [Umsatz] ASC")
+    # weggelassene Sortierspalte, doppelte Namen, leere Liste
+    with raises(BaukastenFehler, "Sortieren.*Anzahl"):
+        uebersetzen(basis + [{"type": "sortieren", "col": "Anzahl"}, sp], SCHEMA)
+    with raises(BaukastenFehler, "zweimal"):
+        uebersetzen(basis + [{"type": "spalten", "liste": [{"col": "cFirma", "als": "X"}, {"col": "Anzahl", "als": "x"}]}], SCHEMA)
+    e = uebersetzen(basis + [{"type": "spalten", "liste": []}], SCHEMA)
+    assert [x.name for x in e.spalten] == ["cFirma", "Summe fWert", "Anzahl"]
+    with raises(BaukastenFehler, "gibt es an dieser Stelle nicht"):
+        uebersetzen(basis + [{"type": "spalten", "liste": [{"col": "x]; DROP TABLE y--"}]}], SCHEMA)
+
+
+def test_im_cockpit_waehlbar():
+    k = [{"type": "tabelle", "table": "Rechnung.tRechnung", "inner": [
+        {"type": "join", "table": "dbo.tKunde", "links": "kKunde", "rechts": "kKunde", "inner": [
+            {"type": "filter", "col": "cLand", "op": "im Cockpit wählbar", "label": "Land"}]},
+        {"type": "filter", "col": "cFirma", "op": "im Cockpit wählbar"}]}]
+    e = uebersetzen(k, SCHEMA, literal=True)
+    assert "(:bk_tKunde_cLand_empty = 1 OR [cLand] IN (:bk_tKunde_cLand))" in e.sql, e.sql
+    assert "(:bk_tKunde_cFirma_empty = 1 OR j1.[cFirma] IN (:bk_tKunde_cFirma))" in e.sql, e.sql
+    assert e.auswahl == [
+        {"param": "bk_tKunde_cLand", "label": "Land", "table": "dbo.tKunde", "column": "cLand"},
+        {"param": "bk_tKunde_cFirma", "label": "cFirma", "table": "dbo.tKunde", "column": "cFirma"}]
+    with raises(BaukastenFehler, "nur im Winkel"):
+        uebersetzen(k + [{"type": "verdichten", "by": ["cLand"], "aggs": [{"fn": "Anzahl"}]},
+                         {"type": "filter", "col": "Anzahl", "op": "im Cockpit wählbar"}], SCHEMA)
+    # Lauf: nichts gewählt/fehlt → alle; Auswahl → IN-Liste
+    from app.services.sql_helpers import _resolve_sql_run_params
+    sql, p = _resolve_sql_run_params(e.sql, {"von": "x"})
+    assert p["bk_tKunde_cLand_empty"] == 1 and "IN (NULL)" in sql
+    sql, p = _resolve_sql_run_params(e.sql, {"bk_tKunde_cLand": ["DE", "AT"], "bk_tKunde_cFirma": ""})
+    assert p["bk_tKunde_cLand_empty"] == 0 and "[cLand] IN (:bk_tKunde_cLand__0, :bk_tKunde_cLand__1)" in sql
+    assert p["bk_tKunde_cFirma_empty"] == 1
+
+
 if __name__ == "__main__":
     fehler = 0
     for name, f in list(globals().items()):

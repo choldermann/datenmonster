@@ -76,7 +76,8 @@ def speichern(body: SpeichernIn, db: Session = Depends(get_db), user: User = Dep
         m = ausfuehren.speichern(db, user, body.project_id, body.connection_id, body.name, body.kette, body.mapping_id)
         conn, schema = ausfuehren.verbindung(db, body.connection_id, user)
         erg = ausfuehren.uebersetzen(body.kette, schema, conn.db_type, literal=True)
-        cockpit = ausfuehren.ins_cockpit(db, user, body.project_id, m, body.kette, erg.spalten, erg.nutzt_zeitraum)
+        cockpit = ausfuehren.ins_cockpit(db, user, body.project_id, m, body.kette, erg.spalten, erg.nutzt_zeitraum,
+                                            auswahl=erg.auswahl, connection_id=body.connection_id)
     except BaukastenFehler as e:
         raise HTTPException(400, str(e))
     return {"mapping_id": m.id, "name": m.name, "cockpit": cockpit}

@@ -67,11 +67,13 @@ export default function DbDropdownField({ field, value, onChange, inp, onRunActi
     const cid = Number(cfg.connection_id);
     if (!cid || !cfg.kind) return;
     let alive = true;
-    api.get("/api/lookup/options", { params: { connection_id: cid, kind: cfg.kind } })
+    // kind „spalte“ (Baukasten „im Cockpit wählbar“): die Werte einer Spalte, Tabelle/Spalte prüft der Server
+    const extra = cfg.kind === "spalte" ? { table: cfg.table, column: cfg.column } : {};
+    api.get("/api/lookup/options", { params: { connection_id: cid, kind: cfg.kind, ...extra } })
       .then(({ data }) => { if (alive) { setOptions(data.options || []); setErr(null); } })
       .catch(e => { if (alive) setErr(fehlerText(e)); });
     return () => { alive = false; };
-  }, [cfg.connection_id, cfg.kind]);
+  }, [cfg.connection_id, cfg.kind, cfg.table, cfg.column]);
 
   useEffect(() => {
     if (!open) return;

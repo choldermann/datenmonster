@@ -225,6 +225,8 @@ FORMAT = """Kettenformat (JSON-Liste von Steinen, Reihenfolge = Ablauf):
   Vergleiche: = ≠ > < ≥ ≤ "ist einer von" (Werte mit Komma getrennt) "enthält" "beginnt mit" "ist leer" "ist nicht leer" "im Jahr" "in den letzten Tagen" "im Zeitraum" (Datum, nutzt den Zeitraum des Cockpits, ohne val)
   "im Zeitraum + Vorjahr" (Datum, ohne val): behält Zeitraum UND dieselbe Spanne ein Jahr davor; "verdichten" liefert dann je Kennzahl
   zusätzlich "<Kennzahl> Vorjahr" (z. B. "Summe fWert Vorjahr") – für „gegen Vorjahr“-Fragen, gruppiert nach Nicht-Datumsspalten
+  "im Cockpit wählbar" (ohne val, optional "label":"Land"): der Wert wird im Cockpit aus einer Liste gewählt, nichts gewählt = alle –
+  NUR wenn die Frage es ausdrücklich will („wählbar“, „zum Auswählen“, „je nach Auswahl“), nur im Winkel
 - WICHTIG: "join" steht NIE auf oberster Ebene, sondern immer in "inner" der Tabelle (wie im Beispiel).
 - Ein "join" enthält in "inner" NUR "filter" – nie einen weiteren "join". Weitere Tabellen kommen als weiterer "join"
   direkt in "inner" der Tabelle; "links" darf dann eine Spalte einer schon dazugeholten Tabelle sein.
@@ -243,6 +245,9 @@ FORMAT = """Kettenformat (JSON-Liste von Steinen, Reihenfolge = Ablauf):
 - „hat X, aber nicht Y“ (z. B. letztes Jahr gekauft, dieses Jahr nicht): "join" mit "ohne":true auf dieselbe oder eine andere Tabelle.
 - Werte aus der Frage übernehmen (Jahre, Zeiträume, Namen, Anzahl) – die Beispiele zeigen nur den Aufbau.
 - nach "verdichten": {"type":"filter",…} prüft eine Kennzahl (z. B. "Summe fWert" > 1000)
+- {"type":"spalten","liste":[{"col":"<Spalte>","als":"<Name im Ergebnis>"},…]}  wählt, ordnet und benennt die Ergebnisspalten
+  (Spalten, die nicht in der Liste stehen, fallen weg); kurz vor "ausgabe" setzen und verständliche deutsche Namen wählen,
+  z. B. "Summe fWert" als "Umsatz", "cFirma" als "Kunde"; "sortieren" danach nutzt die neuen Namen
 - {"type":"sortieren","col":"<Spalte>","dir":"absteigend|aufsteigend"}, {"type":"begrenzen","n":20}
 - {"type":"ausgabe","target":"Tabelle im Cockpit"}  (immer zuletzt)"""
 
@@ -307,12 +312,14 @@ def _unvollstaendig(kette: list) -> str:
                 return f"„Dazuholen {b.get('table') or ''}“ braucht table, links und rechts (genau diese Schlüssel)."
             if t == "filter" and not b.get("col"):
                 return "Ein „filter“ braucht col."
-            if t == "filter" and b.get("op") not in ("ist leer", "ist nicht leer", "im Zeitraum", "im Zeitraum + Vorjahr") and str(b.get("val") or "").strip() == "":
+            if t == "filter" and b.get("op") not in ("ist leer", "ist nicht leer", "im Zeitraum", "im Zeitraum + Vorjahr", "im Cockpit wählbar") and str(b.get("val") or "").strip() == "":
                 return f"„filter {b.get('col')} {b.get('op')}“ braucht einen Wert in val (z. B. die Jahreszahl)."
             if t == "rechnen" and (not b.get("a") or (b.get("b") in (None, "") and b.get("op") != "Tage bis heute")):
                 return "„rechnen“ braucht a und b."
             if t == "einteilen" and not (b.get("col") and [r for r in (b.get("regeln") or []) if r.get("wert")]):
                 return "„einteilen“ braucht col und mindestens eine Regel mit wert."
+            if t == "spalten" and not [x for x in (b.get("liste") or []) if isinstance(x, dict) and x.get("col")]:
+                return "„spalten“ braucht eine liste mit col (und als)."
             if t == "sortieren" and not b.get("col"):
                 return "„sortieren“ braucht col."
             if t == "verdichten" and not [x for x in (b.get("by") or []) if x]:
