@@ -50,6 +50,7 @@ def pruefen(kette: list) -> None:
     if _anzahl(kette) > MAX_STEINE:
         raise BaukastenFehler(f"Höchstens {MAX_STEINE} Steine.")
     tab = verd = -1
+    berechnet = False
     for i, b in enumerate(kette):
         t = (b or {}).get("type")
         if t == "start" and i != 0:
@@ -63,8 +64,11 @@ def pruefen(kette: list) -> None:
             _innen_pruefen(b.get("inner") or [], "tabelle")
         elif t in ("rechnen", "einteilen", "spalten", "sortieren", "begrenzen", "verdichten", "ausgabe", "filter", "profi") and tab < 0:
             raise BaukastenFehler("Zuerst eine Tabelle, dann die Schritte.")
-        if t == "filter" and verd < 0:
-            raise BaukastenFehler("„Nur wenn“ auf oberster Ebene prüft eine Kennzahl und steht deshalb nach „Zusammenfassen“.")
+        if t in ("rechnen", "einteilen"):
+            berechnet = True
+        if t == "filter" and verd < 0 and not berechnet:
+            raise BaukastenFehler("„Nur wenn“ auf oberster Ebene prüft eine berechnete Spalte oder Kennzahl und steht deshalb nach "
+                                  "„Rechnen“, „Einteilen“ oder „Zusammenfassen“ – Zeilen der Tabelle filtert „Nur wenn“ im Winkel.")
         if t == "verdichten":
             if verd >= 0:
                 raise BaukastenFehler("Nur ein „Zusammenfassen“ je Auswertung – für den Vergleich mit dem Vorjahr im Winkel „Nur wenn … im Zeitraum + Vorjahr“ nehmen.")
@@ -193,12 +197,16 @@ def vorschau_begrenzen(sql: str, n: int, dialekt: str) -> str:
 
 # ── Übersetzen ─────────────────────────────────────────────────────────────
 OPS = ("=", "≠", ">", "<", "≥", "≤", "ist einer von", "enthält", "beginnt mit", "ist leer", "ist nicht leer",
-       "im Jahr", "in den letzten Tagen", "im Zeitraum", "im Zeitraum + Vorjahr", "im Cockpit wählbar")
+       "im Jahr", "in den letzten Tagen", "im Zeitraum", "im Zeitraum + Vorjahr", "im Cockpit wählbar", "älter als Tage")
 WAEHLBAR = "im Cockpit wählbar"
 DATUM_OPS = ("Tage bis heute", "Tage zwischen")
+FENSTER_OPS = ("Anteil in %", "laufende Summe")      # rechnen über alle Zeilen der Stufe (Fensterfunktion)
+OHNE_B = ("Tage bis heute", "Anteil in %")
 RECHEN_OPS = {"+": "+", "−": "-", "-": "-", "×": "*", "*": "*", "÷": "/", "/": "/"}
-AGG = {"Summe": "SUM", "Durchschnitt": "AVG", "Höchstwert": "MAX", "Tiefstwert": "MIN", "Anzahl": "COUNT"}
-AGG_KURZ = {"Summe": "Summe", "Durchschnitt": "Ø", "Höchstwert": "Max", "Tiefstwert": "Min"}
+AGG = {"Summe": "SUM", "Durchschnitt": "AVG", "Höchstwert": "MAX", "Tiefstwert": "MIN", "Anzahl": "COUNT",
+       "Anzahl verschiedene": "COUNT"}
+AGG_KURZ = {"Summe": "Summe", "Durchschnitt": "Ø", "Höchstwert": "Max", "Tiefstwert": "Min",
+            "Anzahl verschiedene": "Anzahl versch."}
 
 
 @dataclass
@@ -275,13 +283,24 @@ def uebersetzen(kette: list, schema: Schema, dialekt: str = "mssql", literal: bo
             vorher = stufen[-1]
             stufen.append(Stufe(f"s{len(stufen)}", f"SELECT * FROM {vorher.name}" + (f"\nWHERE {bed}" if bed else ""), spalten))
             merken(bid, spalten, len(stufen) - 1)
-        elif t == "rechnen" and (not b.get("a") or (b.get("b") in (None, "") and b.get("op") != "Tage bis heute")):
+        elif t == "rechnen" and (not b.get("a") or (b.get("b") in (None, "") and b.get("op") not in OHNE_B)):
             erg.spalten_je_block[bid] = [x.name for x in spalten]      # halbfertig: wirkt noch nicht
             merken(bid, spalten, len(stufen) - 1)
         elif t == "rechnen":
             spalten_in = spalten
             name = _name(b.get("name") or "Neue Spalte")
-            if b.get("op") in DATUM_OPS:
+            if b.get("op") in FENSTER_OPS:
+                sa = _spalte(b.get("a"), spalten)
+                if sa.typ != "zahl":
+                    raise BaukastenFehler(f"„{b.get('op')}“ rechnet mit Zahlen – „{sa.name}“ ist keine.")
+                wa = f"CAST({d.q(sa.name)} AS float)"
+                if b.get("op") == "Anteil in %":
+                    ausdruck = f"ROUND(100.0 * {wa} / NULLIF(SUM({wa}) OVER (), 0), 2)"
+                else:
+                    sb = _spalte(b.get("b"), spalten)
+                    ausdruck = f"ROUND(SUM({wa}) OVER (ORDER BY {d.q(sb.name)} ROWS UNBOUNDED PRECEDING), 2)"
+                op = None
+            elif b.get("op") in DATUM_OPS:
                 sa = _spalte(b.get("a"), spalten)
                 sb = _spalte(b.get("b"), spalten) if b.get("op") == "Tage zwischen" else None
                 if sa.typ != "datum" or (sb is not None and sb.typ != "datum"):
@@ -417,6 +436,10 @@ def uebersetzen(kette: list, schema: Schema, dialekt: str = "mssql", literal: bo
                 if fn == "Anzahl":
                     name = "Anzahl"
                     wert_expr = "1"
+                elif fn == "Anzahl verschiedene":
+                    s = _spalte(a.get("col"), spalten)
+                    name = f"{AGG_KURZ[fn]} {s.name}"
+                    wert_expr = d.q(s.name)
                 else:
                     s = _spalte(a.get("col"), spalten)
                     if s.typ != "zahl" and fn in ("Summe", "Durchschnitt"):
@@ -428,6 +451,8 @@ def uebersetzen(kette: list, schema: Schema, dialekt: str = "mssql", literal: bo
                     w = f"CASE WHEN {bed} THEN {wert_expr} END" if bed else wert_expr
                     if fn == "Anzahl":
                         return f"COUNT({w})" if bed else "COUNT(*)"
+                    if fn == "Anzahl verschiedene":
+                        return f"COUNT(DISTINCT {w})"
                     if fn == "Summe" and bed:          # Vorjahresvergleich: kein Umsatz = 0, nicht leer
                         return f"ROUND(COALESCE(SUM({w}), 0), 2)"
                     return f"ROUND({AGG[fn]}({w}), 2)" if fn in ("Summe", "Durchschnitt") else f"{AGG[fn]}({w})"
@@ -652,11 +677,21 @@ def _bedingung(b: dict, spalten: list[Spalte], d: Dialekt, bind, ctx, alias=None
             raise BaukastenFehler(f"„im Jahr“ geht nur bei Datumsspalten – „{s.name}“ ist keine.")
         return f"{x} >= {bind(d.datum(f'{jahr:04d}-01-01'), 'datum')} AND {x} < {bind(d.datum(f'{jahr + 1:04d}-01-01'), 'datum')}"
     if op == "in den letzten Tagen":
+        if s.typ != "datum":
+            raise BaukastenFehler(f"„in den letzten Tagen“ geht nur bei Datumsspalten – „{s.name}“ ist keine.")
         try:
             n = max(0, min(int(w), 3650))
         except ValueError:
             raise BaukastenFehler("„in den letzten Tagen“: bitte eine Zahl.")
         return f"{x} >= {d.tage_zurueck(n)}"
+    if op == "älter als Tage":
+        try:
+            n = max(0, min(int(w), 3650))
+        except ValueError:
+            raise BaukastenFehler("„älter als Tage“: bitte eine Zahl (0 = vor heute).")
+        if s.typ != "datum":
+            raise BaukastenFehler(f"„älter als Tage“ geht nur bei Datumsspalten – „{s.name}“ ist keine.")
+        return f"{x} < {d.tage_zurueck(n)}"
     if op == "ist einer von":
         # Werte mit Semikolon (oder, wenn keins da ist, mit Komma) getrennt: „Rechnung I, Sammel Rechnung“ → IN (…)
         teile = [t.strip() for t in w.split(";" if ";" in w else ",") if t.strip()]

@@ -235,6 +235,55 @@ def detail_speichern(db, user, project_id, connection_id: int, mapping, kette: l
     return {"mapping_id": det.id, "key_column": spalte, "param": DETAIL_PARAM}
 
 
+ALARM_STUFEN = ("hinweis", "warnung", "kritisch")
+ALARM_KATEGORIE = "Eigene Auswertungen"
+
+
+def alarm_speichern(db, project_id, mapping, kette: list, spalten: list, cockpit_name: str | None = None) -> dict | None:
+    """„Warnen, wenn das Ergebnis Zeilen hat“: Regel der Alarm-Engine (Modus count) auf dieses Mapping – sie läuft
+    im Unternehmensmonitor, im Nachtlauf (Startseite, Morgenmail) mit. Regel-Schlüssel bk_<Mapping>; erneutes
+    Speichern aktualisiert sie, ausgeschaltet wird sie gelöscht."""
+    from app.models.alert import AlertRule, AlertSchedule
+    ausgabe = next((b for b in reversed(kette) if b.get("type") == "ausgabe"), None) or {}
+    key = f"bk_{mapping.id}"
+    regel = db.query(AlertRule).filter(AlertRule.project_id == project_id, AlertRule.rule_key == key).first()
+    if not ausgabe.get("alarm"):
+        if regel is not None:
+            db.delete(regel)
+            db.commit()
+        return None
+    zahlen = [s.name for s in spalten if s.typ == "zahl"]
+    wert = ausgabe.get("alarm_wert") if ausgabe.get("alarm_wert") in zahlen else None
+    text = re.sub(r"[\x00-\x1f{}]", "", str(ausgabe.get("alarm_text") or "")).strip()[:160]
+    stufe = ausgabe.get("alarm_stufe") if ausgabe.get("alarm_stufe") in ALARM_STUFEN else "warnung"
+    if regel is None:
+        regel = AlertRule(project_id=project_id, rule_key=key, sort=500)
+        db.add(regel)
+    regel.name = mapping.name
+    regel.description = "Aus dem Baukasten: meldet, sobald die Auswertung Zeilen liefert."
+    regel.category = ALARM_KATEGORIE
+    regel.cockpit = cockpit_name
+    regel.severity = stufe
+    regel.severity_levels = []
+    regel.mapping_id = mapping.id
+    regel.mapping_name = None
+    regel.params = {}
+    # „{anzahl}“ setzt die Alarm-Engine ein; mit Wertspalte zusätzlich die Summe
+    # Einheit der Summe: Mengen, Anzahlen, Tage ohne Einheit – sonst ist es fast immer Geld
+    einheit = "" if wert and re.search(r"menge|anzahl|bestand|tage|stück|stk|kunden|rechnungen|bestellungen|%",
+                                         wert, re.I) and not re.search(r"wert|betrag|umsatz|summe", wert, re.I) else "€"
+    regel.condition = {"mode": "count", "min_count": 1, **({"value_column": wert, "value_unit": einheit} if wert else {})}
+    regel.title_template = f"{{anzahl}} {text}" if text else f"{{anzahl}} Treffer: {mapping.name}"
+    regel.subtitle = None
+    regel.facts = []
+    regel.drilldown = {"mapping_id": mapping.id, "title": mapping.name}
+    regel.active = True
+    db.commit()
+    plaene = db.query(AlertSchedule).filter(AlertSchedule.project_id == project_id, AlertSchedule.active.is_(True)).all()
+    nachts = any(not (p.rule_keys or p.cockpits) or key in (p.rule_keys or []) for p in plaene)
+    return {"rule_key": key, "stufe": stufe, "nachtlauf": nachts}
+
+
 # ── Ausgabe „… im Cockpit“ ─────────────────────────────────────────────────
 ZIELE = {"Tabelle im Cockpit": "table", "Balken im Cockpit": "bar", "Linie im Cockpit": "line",
          "Kachel im Cockpit": "kpi"}

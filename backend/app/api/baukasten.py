@@ -79,9 +79,11 @@ def speichern(body: SpeichernIn, db: Session = Depends(get_db), user: User = Dep
         detail = ausfuehren.detail_speichern(db, user, body.project_id, body.connection_id, m, body.kette, erg)
         cockpit = ausfuehren.ins_cockpit(db, user, body.project_id, m, body.kette, erg.spalten, erg.nutzt_zeitraum,
                                             auswahl=erg.auswahl, connection_id=body.connection_id, detail=detail)
+        alarm = ausfuehren.alarm_speichern(db, body.project_id, m, body.kette, erg.spalten,
+                                           cockpit_name=(cockpit or {}).get("name"))
     except BaukastenFehler as e:
         raise HTTPException(400, str(e))
-    return {"mapping_id": m.id, "name": m.name, "cockpit": cockpit}
+    return {"mapping_id": m.id, "name": m.name, "cockpit": cockpit, "alarm": alarm}
 
 
 @router.get("/cockpits")

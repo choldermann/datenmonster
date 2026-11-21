@@ -185,7 +185,7 @@ def test_bueroplus_rezepte_passen_nur_zu_bueroplus():
             ("VogStorniertKz", "bit"), ("VogDat", "date"), ("VogGPreisNt", "decimal"), ("VogGEkRoh", "decimal")]]},
         {"full_name": "dbo.Adressen", "columns": [{"name": "AdrAdrNr", "type": "int"}, {"name": "AdrReNa2", "type": "nvarchar"}]}]})
     keys = [r["key"] for r in passende(bp, "mssql")]
-    assert keys == ["bp_umsatz_monat", "bp_umsatz_monat_vj", "bp_top_kunden", "bp_abgewandert", "bp_kunden_vorjahr", "bp_umsatz_verkaeufer"], keys
+    assert keys == ["bp_umsatz_monat", "bp_umsatz_monat_vj", "bp_top_kunden", "bp_abgewandert", "bp_kunden_vorjahr", "bp_umsatz_verkaeufer", "bp_aktive_kunden", "bp_umsatz_kumuliert"], keys
     assert not [r for r in passende(SCHEMA, "mssql") if r["system"] == "büro+"]
 
 
@@ -313,6 +313,46 @@ def test_zeilen_dahinter():
     assert "WHERE [cFirma] = :bk_dd" in d.sql
     with raises(BaukastenFehler, "Klick"):
         uebersetzen(k, SCHEMA, detail=2)
+
+
+
+def test_neue_kennzahlen_und_filter():
+    k = [{"type": "tabelle", "table": "Rechnung.tRechnung", "inner": [
+        {"type": "filter", "col": "dErstellt", "op": "älter als Tage", "val": "14"}]},
+         {"type": "rechnen", "name": "Brutto", "a": "fWert", "op": "×", "b": "1.19"},
+         {"type": "filter", "col": "Brutto", "op": ">", "val": "100"},          # oben nach „Rechnen“: erlaubt
+         {"type": "verdichten", "by": [{"col": "dErstellt", "teil": "monat"}],
+          "aggs": [{"fn": "Summe", "col": "fWert"}, {"fn": "Anzahl verschiedene", "col": "kKunde"}]},
+         {"type": "rechnen", "name": "Anteil", "a": "Summe fWert", "op": "Anteil in %", "b": ""},
+         {"type": "rechnen", "name": "Lauf", "a": "Summe fWert", "op": "laufende Summe", "b": "dErstellt (Monat)"}]
+    e = uebersetzen(k, SCHEMA, literal=True)
+    assert "t0.[dErstellt] < DATEADD(DAY, -14, CAST(GETDATE() AS date))" in e.sql, e.sql
+    assert "WHERE [Brutto] > 100" in e.sql
+    assert "COUNT(DISTINCT [kKunde]) AS [Anzahl versch. kKunde]" in e.sql
+    assert "ROUND(100.0 * CAST([Summe fWert] AS float) / NULLIF(SUM(CAST([Summe fWert] AS float)) OVER (), 0), 2) AS [Anteil]" in e.sql
+    assert "SUM(CAST([Summe fWert] AS float)) OVER (ORDER BY [dErstellt (Monat)] ROWS UNBOUNDED PRECEDING)" in e.sql
+    # „Anteil“ ohne b ist fertig, „laufende Summe“ ohne b noch nicht
+    halb = k[:4] + [{"type": "rechnen", "name": "Lauf", "a": "Summe fWert", "op": "laufende Summe", "b": ""}]
+    assert "Lauf" not in [x.name for x in uebersetzen(halb, SCHEMA).spalten]
+    with raises(BaukastenFehler, "Zahlen"):
+        uebersetzen(k[:4] + [{"type": "rechnen", "name": "A", "a": "dErstellt (Monat)", "op": "Anteil in %"}], SCHEMA)
+    # oben ohne Rechnen/Trichter weiterhin nicht
+    with raises(BaukastenFehler, "Winkel"):
+        uebersetzen([k[0], {"type": "filter", "col": "fWert", "op": ">", "val": "1"}], SCHEMA)
+    # VJ: Anzahl verschiedene je Zeitraum
+    vj = [{"type": "tabelle", "table": "Rechnung.tRechnung", "inner": [{"type": "filter", "col": "dErstellt", "op": "im Zeitraum + Vorjahr"}]},
+          {"type": "verdichten", "by": ["cRechnungsNr"], "aggs": [{"fn": "Anzahl verschiedene", "col": "kKunde"}]}]
+    e = uebersetzen(vj, SCHEMA, literal=True)
+    assert "COUNT(DISTINCT CASE WHEN [dErstellt] >= :von" in e.sql and "[Anzahl versch. kKunde Vorjahr]" in e.sql
+
+
+def test_ki_normalisierung_laesst_filter_auf_neuer_spalte_oben():
+    from app.services.baukasten.rezepte import _normalisieren
+    k = _normalisieren([{"type": "tabelle", "table": "x", "inner": []},
+                        {"type": "rechnen", "name": "Fehlmenge", "a": "a", "op": "−", "b": "b"},
+                        {"type": "filter", "col": "Fehlmenge", "op": ">", "val": "0"},
+                        {"type": "filter", "col": "a", "op": ">", "val": "0"}])
+    assert [b["type"] for b in k] == ["tabelle", "rechnen", "filter"] and k[0]["inner"][0]["col"] == "a"
 
 
 if __name__ == "__main__":

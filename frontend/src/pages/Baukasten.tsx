@@ -339,12 +339,13 @@ export default function Baukasten() {
       const { data } = await api.post("/api/baukasten/speichern", { project_id: projectId, connection_id: connectionId, name: name.trim(), kette, mapping_id: mappingId });
       setMappingId(data.mapping_id); setProfiGeaendert(false); setProfiVerwerfen(false);
       setImCockpit(data.cockpit || null);
+      const alarmText = data.alarm ? ` Die Warnung läuft im Unternehmensmonitor mit${data.alarm.nachtlauf ? " und nachts für Startseite und Morgenmail" : " – der nächtliche Lauf ist für dieses Projekt aus (Werkstatt → Projekt → Warnungen)"}.` : "";
       if (data.cockpit) {
         cockpitsLaden();
         // „Neues Cockpit“ ist jetzt angelegt: der Stein zeigt ab sofort auf genau dieses
         setKette((k) => k.map((b) => b.type === "ausgabe" && b.cockpit === "neu" ? { ...b, cockpit: data.cockpit.form_id } : b));
-        setMeldung(`Gespeichert und ins Cockpit „${data.cockpit.name}“ gestellt${data.cockpit.reiter ? ` (Reiter „${data.cockpit.reiter}“)` : ""}.`);
-      } else setMeldung("Gespeichert – das Mapping steht jetzt wie jedes andere im Projekt bereit.");
+        setMeldung(`Gespeichert und ins Cockpit „${data.cockpit.name}“ gestellt${data.cockpit.reiter ? ` (Reiter „${data.cockpit.reiter}“)` : ""}.` + alarmText);
+      } else setMeldung("Gespeichert – das Mapping steht jetzt wie jedes andere im Projekt bereit." + alarmText);
       if (!id) navigate(`/baukasten/${data.mapping_id}`, { replace: true });
     } catch (e) { setMeldung(fehlerText(e, "Speichern fehlgeschlagen")); }
     finally { setSpeichert(false); }
@@ -399,7 +400,7 @@ export default function Baukasten() {
           : !oben ? (tabSpalten[kette[Number(key)]?.table] || []) : [];
         return (
           <div className={cls()} style={{ "--c": farbe } as any} {...ziehbar}><Noppen />
-            <span className="t">{oben ? "Nur Gruppen mit" : "Nur wenn"}</span>
+            <span className="t">{oben && kette.slice(0, i).some((x) => x.type === "verdichten") ? "Nur Gruppen mit" : oben ? "Nur Zeilen mit" : "Nur wenn"}</span>
             <span className="bk-hex">{sel("Spalte", spalten, b.col, (v) => aendern(key, i, { col: v }))}
               {sel("Vergleich", oben ? OPS.filter((o) => o !== WAEHLBAR) : OPS, b.op, (v) => aendern(key, i, { op: v }), null, "bk-op")}
               {!OHNE_WERT.has(b.op) && <input className={`bk-oval${String(b.val ?? "").trim() === "" ? " leer" : ""}`} value={b.val ?? ""} placeholder={b.op === "ist einer von" ? "Wert 1, Wert 2 …" : "Wert"}
@@ -423,6 +424,8 @@ export default function Baukasten() {
           {sel("a", cols, b.a, (v) => aendern(key, i, { a: v }))}{sel("Rechenart", RECHENARTEN, b.op, (v) => aendern(key, i, { op: v }), null, "bk-op")}
           {b.op === "Tage zwischen" ? <>{sel("bis Datum", cols, b.b, (v) => aendern(key, i, { b: v }))}</>
             : b.op === "Tage bis heute" ? <span>bis heute</span>
+            : b.op === "Anteil in %" ? <span>an der Summe aller Zeilen</span>
+            : b.op === "laufende Summe" ? <><span>der Reihe nach</span>{sel("sortiert nach", cols, b.b, (v) => aendern(key, i, { b: v }))}</>
             : <><input className="bk-oval kurz" list={`bk-cols-${bid}`} value={b.b} placeholder="Spalte/Zahl" aria-label="zweiter Wert" onClick={(e) => e.stopPropagation()} onChange={(e) => aendern(key, i, { b: e.target.value })} />
               <datalist id={`bk-cols-${bid}`}>{cols.map((c) => <option key={c} value={c} />)}</datalist></>}
           {zahl(bid, false)}{weg(key, i)}
@@ -544,6 +547,17 @@ export default function Baukasten() {
                   {sel("Klick über", gr, gr.includes(b.drill_spalte) ? b.drill_spalte : gr.includes(b.x) ? b.x : gr[0], (v) => aendern(key, i, { drill_spalte: v }), null)}</>}
               </span>);
             })()}
+            <span className="bk-hex" style={{ flexBasis: "100%", flexWrap: "wrap" }}>
+              <label className="bk-tag" style={{ cursor: "pointer" }} onClick={(e) => e.stopPropagation()}
+                title="Prüft die Auswertung mit den übrigen Warnungen – im Unternehmensmonitor, nachts für Startseite und Morgenmail">
+                <input type="checkbox" checked={!!b.alarm} onChange={(e) => aendern(key, i, { alarm: e.target.checked })} /> Warnen, wenn das Ergebnis Zeilen hat</label>
+              {b.alarm && <>
+                {sel("Stufe", ["hinweis", "warnung", "kritisch"], b.alarm_stufe || "warnung", (v) => aendern(key, i, { alarm_stufe: v }), null, "bk-op")}
+                <input className="bk-oval" style={{ width: 200 }} value={b.alarm_text ?? ""} placeholder="z. B. Kunden ohne Kauf" aria-label="Text der Warnung"
+                  title="Die Warnung lautet: <Anzahl> <Text>" onClick={(e) => e.stopPropagation()} onChange={(e) => aendern(key, i, { alarm_text: e.target.value })} />
+                {zahlen.length > 0 && <><span>Summe von</span>{sel("Summe von", zahlen, b.alarm_wert || "", (v) => aendern(key, i, { alarm_wert: v || null }), "— keine")}</>}
+              </>}
+            </span>
             {imC && b.target === "Kachel im Cockpit" && zahlen.length > 0 && (
               <span className="bk-hex" style={{ flexBasis: "100%" }}><span>Kennzahl</span>
                 {sel("Kennzahl", zahlen, b.wert || "", (v) => aendern(key, i, { wert: v }), "automatisch")}<span>(Summe aller Zeilen)</span></span>)}
@@ -572,9 +586,11 @@ export default function Baukasten() {
             <span className="t">zusammenfassen:</span>
             {b.aggs.map((a, k) => (
               <span key={k} className="bk-pille">
-                {sel("Kennzahl", ["Summe", "Anzahl", "Durchschnitt", "Höchstwert", "Tiefstwert"], a.fn, (v) => { const aggs = structuredClone(b.aggs); aggs[k].fn = v; aendern(key, i, { aggs }); }, null, "bk-op")}
+                {sel("Kennzahl", ["Summe", "Anzahl", "Anzahl verschiedene", "Durchschnitt", "Höchstwert", "Tiefstwert"], a.fn, (v) => { const aggs = structuredClone(b.aggs); aggs[k].fn = v; aendern(key, i, { aggs }); }, null, "bk-op")}
                 {a.fn !== "Anzahl" && sel("von", cols, a.col, (v) => { const aggs = structuredClone(b.aggs); aggs[k].col = v; aendern(key, i, { aggs }); })}
+                {b.aggs.length > 1 && <button className="bk-x" title="Kennzahl entfernen" aria-label="Kennzahl entfernen" onClick={(e) => { e.stopPropagation(); aendern(key, i, { aggs: b.aggs.filter((_: any, n: number) => n !== k) }); }}>×</button>}
               </span>))}
+            {b.aggs.length < 8 && <button className="bk-tag" style={{ cursor: "pointer" }} title="Weitere Kennzahl" onClick={(e) => { e.stopPropagation(); aendern(key, i, { aggs: [...b.aggs, { fn: "Summe", col: "" }] }); }}>＋ Kennzahl</button>}
             {zahl(bid, true, vorherZahl(key, i))}{weg(key, i)}
           </div>
         </div>);
@@ -758,7 +774,10 @@ export default function Baukasten() {
                 onChange={(e) => { const r = rezepte.find((x) => x.key === e.target.value); if (r) { ersetzen(r.kette, r.text); if (!name.trim()) setName(r.name); } }}
                 style={{ background: "var(--bg-elevated)", color: "var(--text-bright)", border: "1px solid var(--border)", borderRadius: 7, padding: "5px 8px", fontSize: 13 }}>
                 <option value="">{rezepte.length ? `Mit einem Rezept beginnen (${rezepte.length}) …` : "Keine Rezepte für diese Datenbank"}</option>
-                {rezepte.map((r) => <option key={r.key} value={r.key}>{r.name} – {r.text}</option>)}
+                {[...new Set(rezepte.map((r: any) => r.bereich || "Vertrieb"))].map((g) => (
+                  <optgroup key={g as string} label={g as string}>
+                    {rezepte.filter((r: any) => (r.bereich || "Vertrieb") === g).map((r) => <option key={r.key} value={r.key}>{r.name} – {r.text}</option>)}
+                  </optgroup>))}
               </select>
               <span style={{ fontSize: 12, color: "var(--text-dim)" }}>oder</span>
               <input value={kiText} onChange={(e) => setKiText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") kiBauen(); }}

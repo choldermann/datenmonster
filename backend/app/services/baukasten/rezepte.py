@@ -58,6 +58,7 @@ REZEPTE = [
                {"type": "verdichten", "by": ["cKundennr", "cFirma (tAdresse)"],
                 "aggs": [{"fn": "Summe", "col": "fVkNettoGesamt"}, {"fn": "Anzahl"}]},
                {"type": "rechnen", "name": "Ø Rechnung", "a": "Summe fVkNettoGesamt", "op": "÷", "b": "Anzahl"},
+               {"type": "rechnen", "name": "Anteil %", "a": "Summe fVkNettoGesamt", "op": "Anteil in %", "b": ""},
                {"type": "sortieren", "col": "Summe fVkNettoGesamt", "dir": "absteigend"},
                {"type": "begrenzen", "n": 20}, _AUS]},
     {"key": "bestseller", "name": "Bestseller-Artikel", "text": "Die 20 meistverkauften Artikel im Zeitraum nach Menge, mit Umsatz",
@@ -106,6 +107,122 @@ REZEPTE = [
                {"type": "rechnen", "name": "Lagerwert", "a": "fLagerbestand", "op": "×", "b": "fEKNetto"},
                {"type": "sortieren", "col": "Lagerwert", "dir": "absteigend"},
                {"type": "begrenzen", "n": 50}, _AUS]},
+    # ── Vertrieb: neue Kennzahlen ──
+    {"key": "aktive_kunden", "name": "Aktive Kunden je Monat",
+     "text": "Wie viele verschiedene Kunden je Monat gekauft haben, mit Rechnungen und Umsatz je Kunde",
+     "kette": [_START,
+               {"type": "tabelle", "table": _RE, "inner": [_OHNE_STORNO, _ZEITRAUM,
+                {"type": "join", "table": _ECK, "links": "kRechnung", "rechts": "kRechnung", "inner": []}]},
+               {"type": "verdichten", "by": [{"col": "dErstellt", "teil": "monat"}, ""],
+                "aggs": [{"fn": "Anzahl verschiedene", "col": "kKunde"}, {"fn": "Anzahl"}, {"fn": "Summe", "col": "fVkNettoGesamt"}]},
+               {"type": "rechnen", "name": "Umsatz je Kunde", "a": "Summe fVkNettoGesamt", "op": "÷", "b": "Anzahl versch. kKunde"},
+               {"type": "spalten", "liste": [{"col": "dErstellt (Monat)", "als": "Monat"}, {"col": "Anzahl versch. kKunde", "als": "Kunden"},
+                                             {"col": "Anzahl", "als": "Rechnungen"}, {"col": "Summe fVkNettoGesamt", "als": "Umsatz"},
+                                             {"col": "Umsatz je Kunde", "als": "Umsatz je Kunde"}]},
+               {"type": "sortieren", "col": "Monat", "dir": "aufsteigend"}, _AUS]},
+    {"key": "umsatz_kumuliert", "name": "Umsatz je Monat, aufgelaufen",
+     "text": "Netto-Umsatz je Monat und die laufende Summe seit Beginn des Zeitraums – als Linie",
+     "kette": [_START,
+               {"type": "tabelle", "table": _RE, "inner": [_OHNE_STORNO, _ZEITRAUM,
+                {"type": "join", "table": _ECK, "links": "kRechnung", "rechts": "kRechnung", "inner": []}]},
+               {"type": "verdichten", "by": [{"col": "dErstellt", "teil": "monat"}, ""], "aggs": [{"fn": "Summe", "col": "fVkNettoGesamt"}]},
+               {"type": "rechnen", "name": "Aufgelaufen", "a": "Summe fVkNettoGesamt", "op": "laufende Summe", "b": "dErstellt (Monat)"},
+               {"type": "spalten", "liste": [{"col": "dErstellt (Monat)", "als": "Monat"}, {"col": "Summe fVkNettoGesamt", "als": "Umsatz"},
+                                             {"col": "Aufgelaufen", "als": "Aufgelaufen"}]},
+               {"type": "sortieren", "col": "Monat", "dir": "aufsteigend"}, {"type": "ausgabe", "target": "Linie im Cockpit"}]},
+    {"key": "warengruppen_anteil", "name": "Umsatzanteil je Warengruppe",
+     "text": "Netto-Umsatz der Rechnungspositionen je Warengruppe im Zeitraum, mit Anteil am Gesamtumsatz",
+     "kette": [_START,
+               {"type": "tabelle", "table": _POS, "inner": [
+                {"type": "join", "table": _RE, "links": "kRechnung", "rechts": "kRechnung", "inner": [_OHNE_STORNO, _ZEITRAUM]},
+                {"type": "join", "table": "dbo.tArtikel", "links": "kArtikel", "rechts": "kArtikel", "inner": []},
+                {"type": "join", "table": "dbo.tWarengruppe", "links": "kWarengruppe", "rechts": "kWarengruppe", "alle": True, "inner": []}]},
+               {"type": "verdichten", "by": ["cName (tWarengruppe)", ""], "aggs": [{"fn": "Summe", "col": "fWertNettoGesamtFixiert"}]},
+               {"type": "rechnen", "name": "Anteil %", "a": "Summe fWertNettoGesamtFixiert", "op": "Anteil in %", "b": ""},
+               {"type": "spalten", "liste": [{"col": "cName (tWarengruppe)", "als": "Warengruppe"},
+                                             {"col": "Summe fWertNettoGesamtFixiert", "als": "Umsatz"}, {"col": "Anteil %", "als": "Anteil %"}]},
+               {"type": "sortieren", "col": "Umsatz", "dir": "absteigend"}, _AUS]},
+    # ── Zahlungsmoral ──
+    {"key": "ueberfaellig", "name": "Überfällige Rechnungen",
+     "text": "Offene Rechnungen mit überschrittenem Zahlungsziel – mit Tagen über Ziel und Mahnstufe",
+     "kette": [_START,
+               {"type": "tabelle", "table": _RE, "inner": [_OHNE_STORNO,
+                {"type": "join", "table": _ECK, "links": "kRechnung", "rechts": "kRechnung", "inner": [
+                    {"type": "filter", "col": "fOffenerWert", "op": ">", "val": "0"},
+                    {"type": "filter", "col": "dZahlungsziel", "op": "älter als Tage", "val": "0"}]},
+                {"type": "join", "table": _ADR, "links": "kKunde", "rechts": "kKunde", "inner": copy.deepcopy(_RECHNUNGSADRESSE)}]},
+               {"type": "rechnen", "name": "Tage über Ziel", "a": "dZahlungsziel", "op": "Tage bis heute", "b": ""},
+               {"type": "spalten", "liste": [{"col": "cRechnungsnr", "als": "Rechnung"}, {"col": "cFirma (tAdresse)", "als": "Kunde"},
+                                             {"col": "dErstellt", "als": "Datum"}, {"col": "dZahlungsziel", "als": "Fällig am"},
+                                             {"col": "Tage über Ziel", "als": "Tage über Ziel"}, {"col": "fOffenerWert", "als": "Offen"},
+                                             {"col": "nMahnstufe", "als": "Mahnstufe"}]},
+               {"type": "sortieren", "col": "Offen", "dir": "absteigend"}, _AUS]},
+    {"key": "zahlungsdauer", "name": "Zahlungsdauer je Kunde",
+     "text": "Ø Tage von der Rechnung bis zur Zahlung je Kunde (bezahlte Rechnungen im Zeitraum, ab 3 Rechnungen), langsamste zuerst",
+     "kette": [_START,
+               {"type": "tabelle", "table": _RE, "inner": [_OHNE_STORNO, _ZEITRAUM,
+                {"type": "join", "table": _ECK, "links": "kRechnung", "rechts": "kRechnung", "inner": [
+                    {"type": "filter", "col": "dBezahlt", "op": "ist nicht leer"}]},
+                {"type": "join", "table": _ADR, "links": "kKunde", "rechts": "kKunde", "inner": copy.deepcopy(_RECHNUNGSADRESSE)}]},
+               {"type": "rechnen", "name": "Tage bis Zahlung", "a": "dErstellt", "op": "Tage zwischen", "b": "dBezahlt"},
+               {"type": "verdichten", "by": ["cKundennr", "cFirma (tAdresse)"],
+                "aggs": [{"fn": "Durchschnitt", "col": "Tage bis Zahlung"}, {"fn": "Höchstwert", "col": "Tage bis Zahlung"},
+                         {"fn": "Anzahl"}, {"fn": "Summe", "col": "fVkNettoGesamt"}]},
+               {"type": "filter", "col": "Anzahl", "op": "≥", "val": "3"},
+               {"type": "spalten", "liste": [{"col": "cKundennr", "als": "Kundennr."}, {"col": "cFirma (tAdresse)", "als": "Kunde"},
+                                             {"col": "Ø Tage bis Zahlung", "als": "Ø Tage bis Zahlung"},
+                                             {"col": "Max Tage bis Zahlung", "als": "längste"}, {"col": "Anzahl", "als": "Rechnungen"},
+                                             {"col": "Summe fVkNettoGesamt", "als": "Umsatz"}]},
+               {"type": "sortieren", "col": "Ø Tage bis Zahlung", "dir": "absteigend"}, {"type": "begrenzen", "n": 30}, _AUS]},
+    # ── Lager ──
+    {"key": "mindestbestand", "name": "Unter Mindestbestand",
+     "text": "Aktive Artikel, deren verfügbarer Bestand unter dem Mindestbestand liegt – mit Fehlmenge und Zulauf",
+     "kette": [_START,
+               {"type": "tabelle", "table": "dbo.tArtikel", "inner": [
+                   {"type": "filter", "col": "cAktiv", "op": "=", "val": "Y"},
+                   {"type": "filter", "col": "nMidestbestand", "op": ">", "val": "0"},
+                   {"type": "join", "table": "dbo.tlagerbestand", "links": "kArtikel", "rechts": "kArtikel", "inner": []},
+                   {"type": "join", "table": "dbo.tArtikelBeschreibung", "links": "kArtikel", "rechts": "kArtikel", "inner": [
+                       {"type": "filter", "col": "kSprache", "op": "=", "val": "1"},
+                       {"type": "filter", "col": "kPlattform", "op": "=", "val": "1"},
+                       {"type": "filter", "col": "kShop", "op": "=", "val": "0"}]}]},
+               {"type": "rechnen", "name": "Fehlmenge", "a": "nMidestbestand", "op": "−", "b": "fVerfuegbar"},
+               {"type": "filter", "col": "Fehlmenge", "op": ">", "val": "0"},
+               {"type": "spalten", "liste": [{"col": "cArtNr", "als": "Artikelnr."}, {"col": "cName", "als": "Artikel"},
+                                             {"col": "nMidestbestand", "als": "Mindestbestand"}, {"col": "fVerfuegbar", "als": "Verfügbar"},
+                                             {"col": "Fehlmenge", "als": "Fehlmenge"}, {"col": "fZulauf", "als": "Zulauf"}]},
+               {"type": "sortieren", "col": "Fehlmenge", "dir": "absteigend"}, _AUS]},
+    # ── Einkauf ──
+    {"key": "einkauf_lieferant", "name": "Einkauf je Lieferant",
+     "text": "Bestellwert (Menge × EK netto) und Anzahl Bestellungen je Lieferant im Zeitraum, mit Anteil",
+     "kette": [_START,
+               {"type": "tabelle", "table": "dbo.tLieferantenBestellung", "inner": [
+                   {"type": "filter", "col": "dErstellt", "op": "im Zeitraum"},
+                   {"type": "filter", "col": "nDeleted", "op": "=", "val": "0"},
+                   {"type": "join", "table": "dbo.tLieferantenBestellungPos", "links": "kLieferantenBestellung", "rechts": "kLieferantenBestellung", "inner": []},
+                   {"type": "join", "table": "dbo.tlieferant", "links": "kLieferant", "rechts": "kLieferant", "inner": []}]},
+               {"type": "rechnen", "name": "Bestellwert", "a": "fMenge", "op": "×", "b": "fEKNetto"},
+               {"type": "verdichten", "by": ["cFirma", ""],
+                "aggs": [{"fn": "Summe", "col": "Bestellwert"}, {"fn": "Anzahl verschiedene", "col": "kLieferantenBestellung"}]},
+               {"type": "rechnen", "name": "Anteil %", "a": "Summe Bestellwert", "op": "Anteil in %", "b": ""},
+               {"type": "spalten", "liste": [{"col": "cFirma", "als": "Lieferant"}, {"col": "Summe Bestellwert", "als": "Bestellwert"},
+                                             {"col": "Anzahl versch. kLieferantenBestellung", "als": "Bestellungen"}, {"col": "Anteil %", "als": "Anteil %"}]},
+               {"type": "sortieren", "col": "Bestellwert", "dir": "absteigend"}, _AUS]},
+    {"key": "offene_bestellungen", "name": "Offene Bestellpositionen",
+     "text": "Noch nicht gelieferte Mengen aus Lieferantenbestellungen, älteste Bestellung zuerst – mit Lieferant und offenem Wert",
+     "kette": [_START,
+               {"type": "tabelle", "table": "dbo.tLieferantenBestellungPos", "inner": [
+                   {"type": "filter", "col": "fAnzahlOffen", "op": ">", "val": "0"},
+                   {"type": "join", "table": "dbo.tLieferantenBestellung", "links": "kLieferantenBestellung", "rechts": "kLieferantenBestellung", "inner": [
+                       {"type": "filter", "col": "nDeleted", "op": "=", "val": "0"},
+                       {"type": "filter", "col": "nManuellAbgeschlossen", "op": "=", "val": "0"}]},
+                   {"type": "join", "table": "dbo.tlieferant", "links": "kLieferant", "rechts": "kLieferant", "inner": []}]},
+               {"type": "rechnen", "name": "Offener Wert", "a": "fAnzahlOffen", "op": "×", "b": "fEKNetto"},
+               {"type": "spalten", "liste": [{"col": "cFirma", "als": "Lieferant"}, {"col": "cArtNr", "als": "Artikelnr."},
+                                             {"col": "cName", "als": "Artikel"}, {"col": "dErstellt", "als": "Bestellt am"},
+                                             {"col": "fAnzahlOffen", "als": "Offen"}, {"col": "dLieferdatum", "als": "Liefertermin"},
+                                             {"col": "Offener Wert", "als": "Offener Wert"}]},
+               {"type": "sortieren", "col": "Bestellt am", "dir": "aufsteigend"}, _AUS]},
 ]
 
 
@@ -150,6 +267,7 @@ REZEPTE += [
                {"type": "verdichten", "by": ["VogAdrNr", "AdrReNa2"],
                 "aggs": [{"fn": "Summe", "col": "VogGPreisNt"}, {"fn": "Summe", "col": "VogGEkRoh"}, {"fn": "Anzahl"}]},
                _BP_ROH, {"type": "rechnen", "name": "Ø Rechnung", "a": "Summe VogGPreisNt", "op": "÷", "b": "Anzahl"},
+               {"type": "rechnen", "name": "Anteil %", "a": "Summe VogGPreisNt", "op": "Anteil in %", "b": ""},
                {"type": "sortieren", "col": "Summe VogGPreisNt", "dir": "absteigend"}, {"type": "begrenzen", "n": 20}, _AUS]},
     {"key": "bp_abgewandert", "system": "büro+", "ki_hinweis": "Bei konkreten Jahren (z. B. 2025 gekauft, 2026 nicht) außen „im Jahr“ 2025 und im ohne-Winkel „im Jahr“ 2026 statt „in den letzten Tagen“.",
      "name": "Abgewanderte Kunden",
@@ -199,6 +317,24 @@ REZEPTE += [
                    {"type": "filter", "col": "VogDat", "op": "in den letzten Tagen", "val": "90"},
                    copy.deepcopy(_BP_KUNDE)]},
                {"type": "sortieren", "col": "VogGPreisNt", "dir": "absteigend"}, _AUS]},
+    {"key": "bp_aktive_kunden", "system": "büro+", "name": "Aktive Kunden je Monat",
+     "text": "Wie viele verschiedene Kunden je Monat gekauft haben, mit Rechnungen und Umsatz je Kunde",
+     "kette": [_START, {"type": "tabelle", "table": _BV, "inner": copy.deepcopy(_BP_RECHNUNG)},
+               {"type": "verdichten", "by": [{"col": "VogDat", "teil": "monat"}],
+                "aggs": [{"fn": "Anzahl verschiedene", "col": "VogAdrNr"}, {"fn": "Anzahl"}, {"fn": "Summe", "col": "VogGPreisNt"}]},
+               {"type": "rechnen", "name": "Umsatz je Kunde", "a": "Summe VogGPreisNt", "op": "÷", "b": "Anzahl versch. VogAdrNr"},
+               {"type": "spalten", "liste": [{"col": "VogDat (Monat)", "als": "Monat"}, {"col": "Anzahl versch. VogAdrNr", "als": "Kunden"},
+                                             {"col": "Anzahl", "als": "Rechnungen"}, {"col": "Summe VogGPreisNt", "als": "Umsatz"},
+                                             {"col": "Umsatz je Kunde", "als": "Umsatz je Kunde"}]},
+               {"type": "sortieren", "col": "Monat", "dir": "aufsteigend"}, _AUS]},
+    {"key": "bp_umsatz_kumuliert", "system": "büro+", "name": "Umsatz je Monat, aufgelaufen",
+     "text": "Netto-Umsatz je Monat und die laufende Summe seit Beginn des Zeitraums – als Linie",
+     "kette": [_START, {"type": "tabelle", "table": _BV, "inner": copy.deepcopy(_BP_RECHNUNG)},
+               {"type": "verdichten", "by": [{"col": "VogDat", "teil": "monat"}], "aggs": [{"fn": "Summe", "col": "VogGPreisNt"}]},
+               {"type": "rechnen", "name": "Aufgelaufen", "a": "Summe VogGPreisNt", "op": "laufende Summe", "b": "VogDat (Monat)"},
+               {"type": "spalten", "liste": [{"col": "VogDat (Monat)", "als": "Monat"}, {"col": "Summe VogGPreisNt", "als": "Umsatz"},
+                                             {"col": "Aufgelaufen", "als": "Aufgelaufen"}]},
+               {"type": "sortieren", "col": "Monat", "dir": "aufsteigend"}, {"type": "ausgabe", "target": "Linie im Cockpit"}]},
     {"key": "bp_lieferscheine", "system": "büro+", "name": "Lieferscheine ohne Rechnung",
      "text": "Nicht stornierte Lieferscheine in der Vorgangsübersicht, älteste zuerst, mit Kunde",
      "kette": [_START, {"type": "tabelle", "table": "dbo.Vorgang", "inner": [
@@ -207,8 +343,14 @@ REZEPTE += [
                    copy.deepcopy(_BP_KUNDE)]},
                {"type": "sortieren", "col": "VogDat", "dir": "aufsteigend"}, _AUS]},
 ]
+BEREICHE = {
+    "Zahlungsmoral": {"offene_rechnungen", "ueberfaellig", "zahlungsdauer"},
+    "Lager": {"lagerwert", "mindestbestand"},
+    "Einkauf": {"einkauf_lieferant", "offene_bestellungen"},
+}
 for _r in REZEPTE:
     _r.setdefault("system", "JTL")
+    _r.setdefault("bereich", next((b for b, keys in BEREICHE.items() if _r["key"] in keys), "Vertrieb"))
 
 
 def _tabellen_aufloesen(kette: list, schema: Schema) -> list:
@@ -235,7 +377,7 @@ def passende(schema: Schema, dialekt: str) -> list[dict]:
         except BaukastenFehler as e:
             logger.info("Rezept %s passt hier nicht: %s", r["key"], e)
             continue
-        aus.append({"key": r["key"], "name": r["name"], "text": r["text"], "system": r["system"], "kette": k})
+        aus.append({"key": r["key"], "name": r["name"], "text": r["text"], "system": r["system"], "bereich": r["bereich"], "kette": k})
     return aus
 
 
@@ -244,7 +386,7 @@ FORMAT = """Kettenformat (JSON-Liste von Steinen, Reihenfolge = Ablauf):
 - {"type":"start","trigger":"Wenn das Cockpit öffnet"}  (immer zuerst)
 - {"type":"tabelle","table":"<Schema.Tabelle>","inner":[ … ]}  genau EINE, enthält nur "filter" und "join"
 - im Winkel: {"type":"filter","col":"<Spalte>","op":"<Vergleich>","val":"<Wert>"}
-  Vergleiche: = ≠ > < ≥ ≤ "ist einer von" (Werte mit Komma getrennt) "enthält" "beginnt mit" "ist leer" "ist nicht leer" "im Jahr" "in den letzten Tagen" "im Zeitraum" (Datum, nutzt den Zeitraum des Cockpits, ohne val)
+  Vergleiche: = ≠ > < ≥ ≤ "ist einer von" (Werte mit Komma getrennt) "enthält" "beginnt mit" "ist leer" "ist nicht leer" "im Jahr" "in den letzten Tagen" "älter als Tage" (Datum vor heute minus val Tage; 0 = vor heute, z. B. überschrittenes Zahlungsziel) "im Zeitraum" (Datum, nutzt den Zeitraum des Cockpits, ohne val)
   "im Zeitraum + Vorjahr" (Datum, ohne val): behält Zeitraum UND dieselbe Spanne ein Jahr davor; "verdichten" liefert dann je Kennzahl
   zusätzlich "<Kennzahl> Vorjahr" (z. B. "Summe fWert Vorjahr") – für „gegen Vorjahr“-Fragen; auch je Monat/Jahr derselben
   Datumsspalte (dann steht der Vorjahresmonat in derselben Zeile wie der Monat)
@@ -260,14 +402,18 @@ FORMAT = """Kettenformat (JSON-Liste von Steinen, Reihenfolge = Ablauf):
   Spalten der dazugeholten Tabelle, die es schon gibt, heißen danach "<Spalte> (<Tabelle ohne Schema>)", z. B. "cFirma (tAdresse)".
 - {"type":"rechnen","name":"<neu>","a":"<Spalte>","op":"+|−|×|÷","b":"<Spalte oder Zahl>"}
   Datum: "op":"Tage bis heute" (a = Datumsspalte, b leer) oder "Tage zwischen" (a, b = Datumsspalten)
+  Über alle Zeilen: "op":"Anteil in %" (a = Zahlspalte, b leer → Anteil der Zeile an der Summe aller Zeilen) oder
+  "laufende Summe" (a = Zahlspalte, b = Spalte, nach der aufsteigend aufsummiert wird, z. B. der Monat)
 - {"type":"einteilen","name":"<neu>","col":"<Spalte>","regeln":[{"op":"≥","val":"1000","wert":"groß"},…],"sonst":"klein"}
   Wenn-dann-Gruppen (erste passende Regel gewinnt); steht auf oberster Ebene wie "rechnen"
-- {"type":"verdichten","by":["<Spalte>" oder {"col":"<Datumsspalte>","teil":"monat|jahr"}, …],"aggs":[{"fn":"Summe|Durchschnitt|Höchstwert|Tiefstwert","col":"<Zahlspalte>"},{"fn":"Anzahl"}]}
-  höchstens einmal; danach heißen die Spalten: "<Spalte>", "<Datumsspalte> (Monat)", "Summe <Spalte>", "Ø <Spalte>", "Max <Spalte>", "Min <Spalte>", "Anzahl"
+- {"type":"verdichten","by":["<Spalte>" oder {"col":"<Datumsspalte>","teil":"monat|jahr"}, …],"aggs":[{"fn":"Summe|Durchschnitt|Höchstwert|Tiefstwert","col":"<Zahlspalte>"},{"fn":"Anzahl"},{"fn":"Anzahl verschiedene","col":"<Spalte>"}]}
+  höchstens einmal; danach heißen die Spalten: "<Spalte>", "<Datumsspalte> (Monat)", "Summe <Spalte>", "Ø <Spalte>", "Max <Spalte>", "Min <Spalte>", "Anzahl", "Anzahl versch. <Spalte>"
+  („Anzahl verschiedene“ zählt jeden Wert einmal, z. B. Kunden statt Rechnungen)
 - Vergleich mit dem Vorjahr: NIE zwei "verdichten", sondern Filter "im Zeitraum + Vorjahr" im Winkel und EIN "verdichten".
 - „hat X, aber nicht Y“ (z. B. letztes Jahr gekauft, dieses Jahr nicht): "join" mit "ohne":true auf dieselbe oder eine andere Tabelle.
 - Werte aus der Frage übernehmen (Jahre, Zeiträume, Namen, Anzahl) – die Beispiele zeigen nur den Aufbau.
-- nach "verdichten": {"type":"filter",…} prüft eine Kennzahl (z. B. "Summe fWert" > 1000)
+- nach "verdichten": {"type":"filter",…} prüft eine Kennzahl (z. B. "Summe fWert" > 1000); auf oberster Ebene nach
+  "rechnen"/"einteilen" prüft "filter" die neue Spalte (z. B. "Fehlmenge" > 0) – Tabellenspalten filtert man im Winkel
 - {"type":"spalten","liste":[{"col":"<Spalte>","als":"<Name im Ergebnis>"},…]}  wählt, ordnet und benennt die Ergebnisspalten
   (Spalten, die nicht in der Liste stehen, fallen weg); kurz vor "ausgabe" setzen und verständliche deutsche Namen wählen,
   z. B. "Summe fWert" als "Umsatz", "cFirma" als "Kunde"; "sortieren" danach nutzt die neuen Namen
@@ -299,9 +445,10 @@ def _normalisieren(kette: list) -> list:
         return k
     tab.setdefault("inner", [])
     verd = next((i for i, b in enumerate(k) if b["type"] == "verdichten"), None)
+    neue = {b.get("name") for b in k if b["type"] in ("rechnen", "einteilen")}   # Filter darauf bleiben oben
     aus = []
     for i, b in enumerate(k):
-        if b["type"] == "join" or (b["type"] == "filter" and (verd is None or i < verd)):
+        if b["type"] == "join" or (b["type"] == "filter" and (verd is None or i < verd) and b.get("col") not in neue):
             tab["inner"].append(b)
         else:
             aus.append(b)
@@ -337,7 +484,7 @@ def _unvollstaendig(kette: list) -> str:
                 return "Ein „filter“ braucht col."
             if t == "filter" and b.get("op") not in ("ist leer", "ist nicht leer", "im Zeitraum", "im Zeitraum + Vorjahr", "im Cockpit wählbar") and str(b.get("val") or "").strip() == "":
                 return f"„filter {b.get('col')} {b.get('op')}“ braucht einen Wert in val (z. B. die Jahreszahl)."
-            if t == "rechnen" and (not b.get("a") or (b.get("b") in (None, "") and b.get("op") != "Tage bis heute")):
+            if t == "rechnen" and (not b.get("a") or (b.get("b") in (None, "") and b.get("op") not in ("Tage bis heute", "Anteil in %"))):
                 return "„rechnen“ braucht a und b."
             if t == "einteilen" and not (b.get("col") and [r for r in (b.get("regeln") or []) if r.get("wert")]):
                 return "„einteilen“ braucht col und mindestens eine Regel mit wert."
