@@ -9,13 +9,14 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { ArrowLeft, Code2, Loader2, Save, AlertTriangle, X, Sparkles, BookOpen, Undo2 } from "lucide-react";
+import { ArrowLeft, Code2, Loader2, Save, AlertTriangle, X, Sparkles, BookOpen, Undo2, Redo2, HelpCircle } from "lucide-react";
 import api, { fehlerText } from "../api/client";
 import TabellenSuche from "../components/baukasten/TabellenSuche";
 import VorschauDiagramm from "../components/baukasten/VorschauDiagramm";
+import Tour, { TOUR_KEY } from "../components/baukasten/Tour";
 import { useProject } from "../context/ProjectContext";
 import {
-  ART, OPS, OHNE_WERT, RECHENARTEN, PROFI_FARBE, Stein, Nutzlast, liste, kindKey, blockId, simuliere, alleStellen, platzFuer, gueltig,
+  ART, HILFE, OPS, OHNE_WERT, RECHENARTEN, PROFI_FARBE, Stein, Nutzlast, liste, kindKey, blockId, simuliere, alleStellen, platzFuer, gueltig,
 } from "../components/baukasten/regeln";
 
 const CSS = `
@@ -112,6 +113,8 @@ const CSS = `
 
 /* Vorschau */
 .bk-vorschau { padding: 12px; min-width: 0; position: sticky; top: 10px; }
+.bk-hilfe { margin-top: 10px; padding: 9px 10px; border-left: 4px solid var(--c); background: var(--bg-card); border-radius: 6px; font-size: 12.5px; line-height: 1.5; color: var(--text-main); }
+.bk-hilfe b { display: block; color: var(--text-bright); margin-bottom: 3px; }
 .bk-ansicht { display: inline-flex; border: 1px solid var(--border); border-radius: 7px; overflow: hidden; margin: 0 0 8px; }
 .bk-ansicht button { background: none; border: 0; color: var(--text-dim); font-size: 12px; padding: 4px 11px; cursor: pointer; }
 .bk-ansicht button + button { border-left: 1px solid var(--border); }
@@ -189,7 +192,11 @@ export default function Baukasten() {
   const [kiText, setKiText] = useState("");
   const [kiLaeuft, setKiLaeuft] = useState(false);
   const [kiHinweis, setKiHinweis] = useState("");
-  const [vorher, setVorher] = useState<Stein[] | null>(null);     // für „Rückgängig“ nach Rezept/KI
+  // Verlauf für Rückgängig/Wiederholen: jede Änderung der Kette; Tipp-Folgen (< 0,7 s) zählen als ein Schritt
+  const verlauf = useRef<{ zurueck: Stein[][]; vor: Stein[][]; letzt: Stein[] | null; zeit: number; still: boolean }>(
+    { zurueck: [], vor: [], letzt: null, zeit: 0, still: true });
+  const [, setVerlaufStand] = useState(0);
+  const [tour, setTour] = useState(() => { try { return !localStorage.getItem(TOUR_KEY); } catch { return false; } });
   const rechenNr = useRef(0);
 
   // Laden: vorhandenes Baukasten-Mapping oder neu
@@ -197,7 +204,7 @@ export default function Baukasten() {
     if (!id) return;
     api.get(`/api/baukasten/mapping/${id}`).then(({ data }) => {
       setName(data.name || ""); setProjectId(data.project_id ?? null);
-      if (data.baukasten) { setKette(data.kette || STARTER); setConnectionId(data.connection_id); setProfiGeaendert(!!data.profi_geaendert); }
+      if (data.baukasten) { verlauf.current = { zurueck: [], vor: [], letzt: null, zeit: 0, still: true }; setKette(data.kette || STARTER); setConnectionId(data.connection_id); setProfiGeaendert(!!data.profi_geaendert); }
       else setFehler("Dieses Mapping wurde nicht im Baukasten gebaut – es lässt sich nur in der Profi-Ansicht bearbeiten.");
     }).catch((e) => setFehler(fehlerText(e)));
   }, [id]);
@@ -214,6 +221,46 @@ export default function Baukasten() {
     api.get("/api/baukasten/tabellen", { params: { connection_id: connectionId } })
       .then(({ data }) => setTabellen(data.tabellen || [])).catch((e) => { setTabellen([]); setFehler(fehlerText(e)); });
   }, [connectionId]);
+  useEffect(() => {
+    const h = verlauf.current;
+    if (h.still || h.letzt === null) { h.still = false; h.letzt = kette; return; }
+    if (h.letzt !== kette) {
+      const jetzt = Date.now();
+      if (jetzt - h.zeit > 700 || !h.zurueck.length) { h.zurueck.push(h.letzt); if (h.zurueck.length > 100) h.zurueck.shift(); }
+      h.zeit = jetzt; h.vor = []; h.letzt = kette; setVerlaufStand((x) => x + 1);
+    }
+  }, [kette]);
+  const rueckgaengig = () => {
+    const h = verlauf.current; const alt = h.zurueck.pop(); if (!alt) return;
+    h.vor.push(kette); h.still = true; h.zeit = 0; h.letzt = alt; setKette(alt); setAuswahl(null); setKiHinweis(""); setVerlaufStand((x) => x + 1);
+  };
+  const wiederholen = () => {
+    const h = verlauf.current; const neu = h.vor.pop(); if (!neu) return;
+    h.zurueck.push(kette); h.still = true; h.zeit = 0; h.letzt = neu; setKette(neu); setAuswahl(null); setVerlaufStand((x) => x + 1);
+  };
+  // Strg+Z / Strg+Y (in Eingabefeldern bleibt das normale Rückgängig des Feldes)
+  useEffect(() => {
+    const taste = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const ziel = e.target as HTMLElement;
+      if (ziel?.closest?.("input, textarea, [contenteditable=true]")) return;
+      const k = e.key.toLowerCase();
+      if (k === "z" && !e.shiftKey) { e.preventDefault(); rueckgaengig(); }
+      else if (k === "y" || (k === "z" && e.shiftKey)) { e.preventDefault(); wiederholen(); }
+    };
+    window.addEventListener("keydown", taste);
+    return () => window.removeEventListener("keydown", taste);
+  });
+  // Beim Ziehen am Fensterrand mitscrollen
+  useEffect(() => {
+    if (!tragen) return;
+    const rand = (e: DragEvent) => {
+      if (e.clientY < 70) window.scrollBy(0, -18);
+      else if (e.clientY > window.innerHeight - 70) window.scrollBy(0, 18);
+    };
+    document.addEventListener("dragover", rand);
+    return () => document.removeEventListener("dragover", rand);
+  }, [tragen]);
   const cockpitsLaden = () => {
     if (!projectId) return;
     api.get("/api/baukasten/cockpits", { params: { project_id: projectId } }).then(({ data }) => setCockpits(data || [])).catch(() => setCockpits([]));
@@ -225,7 +272,7 @@ export default function Baukasten() {
       .then(({ data }) => setRezepte(data.rezepte || [])).catch(() => setRezepte([]));
   }, [connectionId]);
   const ersetzen = (neu: Stein[], hinweis = "") => {
-    setVorher(kette); setKette(neu); setAuswahl(null); setZeige(null); setKiHinweis(hinweis);
+    setKette(neu); setAuswahl(null); setZeige(null); setKiHinweis(hinweis);
   };
   const kiBauen = async () => {
     if (!kiText.trim() || !connectionId) return;
@@ -577,6 +624,7 @@ export default function Baukasten() {
       onClick={() => { setAuswahl(null); }}
       onKeyDown={(e) => { if (e.key === "Escape") { setAuswahl(null); setPlatzieren(null); } }} tabIndex={-1}>
       <style>{CSS}</style>
+      {tour && <Tour onEnde={() => setTour(false)} />}
       <div className="bk-kopf">
         <button className="btn-ghost text-xs" onClick={() => navigate("/dashboard", { state: { tab: "mappings" } })}><ArrowLeft size={13} /> Dashboard</button>
         <strong style={{ fontSize: 15, color: "var(--text-bright)" }}>Baukasten</strong>
@@ -589,6 +637,9 @@ export default function Baukasten() {
           Zeitraum <input type="date" value={von} onChange={(e) => setVon(e.target.value)} /> – <input type="date" value={bis} onChange={(e) => setBis(e.target.value)} /></label>
         <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
           {rechnet && <span style={{ fontSize: 12, color: "var(--text-dim)", display: "flex", gap: 5, alignItems: "center" }}><Loader2 size={13} className="animate-spin" /> rechnet …</span>}
+          <button className="btn-ghost text-xs" onClick={rueckgaengig} disabled={!verlauf.current.zurueck.length} title="Rückgängig (Strg+Z)" aria-label="Rückgängig"><Undo2 size={13} /></button>
+          <button className="btn-ghost text-xs" onClick={wiederholen} disabled={!verlauf.current.vor.length} title="Wiederholen (Strg+Y)" aria-label="Wiederholen"><Redo2 size={13} /></button>
+          <button className="btn-ghost text-xs" onClick={() => setTour(true)} title="Kurze Einführung" aria-label="Kurze Einführung"><HelpCircle size={13} /></button>
           <button className="btn-ghost text-xs" title={mappingId ? "Dasselbe Mapping in der technischen Ansicht" : "Erst speichern, dann gibt es die Profi-Ansicht"}
             onClick={() => mappingId ? navigate(`/mappings/${mappingId}`) : setMeldung("Erst speichern – dann lässt sich die Profi-Ansicht öffnen.")}><Code2 size={13} /> Profi-Ansicht</button>
           <button className="btn-primary text-xs" onClick={speichern} disabled={speichert || !connectionId}>
@@ -637,6 +688,13 @@ export default function Baukasten() {
             {auswahl ? "Leuchtende Steine passen an den gewählten Stein – ein Klick setzt sie ein. Esc hebt die Auswahl auf."
               : "Stein antippen: dann leuchten die passenden Bausteine. Oder einen Baustein ziehen bzw. anklicken – dann leuchten die passenden Stellen."}
           </p>
+          {(() => {
+            const typ = auswahl ? (() => { try { return liste(kette, auswahl.key)[auswahl.i]?.type; } catch { return undefined; } })() : undefined;
+            return typ && HILFE[typ] ? (
+              <div className="bk-hilfe" style={{ "--c": ART[typ]?.farbe || PROFI_FARBE } as any}>
+                <b>{ART[typ]?.name || "Profi-Stein"}</b>{HILFE[typ]}
+              </div>) : null;
+          })()}
         </aside>
 
         <main className="bk-platte" onClick={() => setAuswahl(null)}>
@@ -661,7 +719,6 @@ export default function Baukasten() {
                 style={{ flex: "1 1 260px", minWidth: 0, background: "var(--bg-elevated)", color: "var(--text-bright)", border: "1px solid var(--border)", borderRadius: 7, padding: "5px 8px", fontSize: 13 }} />
               <button className="btn-primary text-xs" onClick={kiBauen} disabled={kiLaeuft || !kiText.trim()} title="Die KI legt die Steine – du siehst danach jeden einzelnen">
                 {kiLaeuft ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />} {kiLaeuft ? "baut …" : "Mit KI bauen"}</button>
-              {vorher && <button className="btn-ghost text-xs" onClick={() => { setKette(vorher); setVorher(null); setKiHinweis(""); }} title="Vorherige Steine wiederherstellen"><Undo2 size={13} /> Rückgängig</button>}
               {kiHinweis && <span style={{ flexBasis: "100%", fontSize: 12, color: "var(--text-main)" }}>💡 {kiHinweis}</span>}
             </div>)}
           <div className="bk-stapel">{stapel(kette, "")}</div>

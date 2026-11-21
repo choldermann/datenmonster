@@ -119,3 +119,18 @@ export function platzFuer(kette: Stein[], typ: string, auswahl: { key: string; i
   for (const [k, i] of alleStellen(kette).reverse()) if (simuliere(kette, n, k, i)) return { key: k, i, wie: "anderswo" };
   return null;
 }
+
+/** Erklärung zum ausgewählten Stein (links unter den Bausteinen). */
+export const HILFE: Record<string, string> = {
+  start: "Wann die Auswertung läuft. Im Cockpit: jedes Mal, wenn es geöffnet oder der Zeitraum geändert wird.",
+  tabelle: "Die Tabelle, aus der die Zeilen kommen. Alles im Winkel gilt für sie: „Nur wenn“ filtert ihre Zeilen, „Dazuholen“ verknüpft weitere Tabellen.",
+  join: "Holt Spalten aus einer zweiten Tabelle dazu – über eine Spalte, die in beiden vorkommt (z. B. Kundennummer). „nur Zeilen mit Treffer“ wirft Zeilen ohne Partner weg, „auch ohne Treffer“ behält sie, „nur OHNE Treffer“ zeigt genau die ohne Partner (z. B. Kunden ohne Rechnung). „Nur wenn“ im Winkel grenzt die zweite Tabelle ein.",
+  filter: "Behält nur Zeilen, die die Bedingung erfüllen. „im Zeitraum“ nimmt den Zeitraum des Cockpits; „im Zeitraum + Vorjahr“ behält zusätzlich dieselbe Spanne ein Jahr davor – „Zusammenfassen“ zeigt dann je Kennzahl eine Vorjahresspalte. Nach dem Trichter prüft „Nur wenn“ eine Kennzahl (z. B. Umsatz > 1000).",
+  rechnen: "Neue Spalte aus zwei Werten: plus, minus, mal, geteilt (Zahl oder Spalte). „Tage bis heute“ zählt die Tage seit einem Datum, „Tage zwischen“ die Tage zwischen zwei Datumsspalten.",
+  einteilen: "Ordnet jede Zeile einer Gruppe zu: die erste passende Regel gewinnt, sonst gilt „sonst“. Beispiel: Rechnungsbetrag ≥ 1000 → groß, ≥ 100 → mittel, sonst klein. Danach lässt sich nach der neuen Spalte zusammenfassen.",
+  verdichten: "Der Trichter: aus vielen Zeilen werden Gruppen – je Kunde, je Monat, … – mit Summe, Durchschnitt, Höchst-/Tiefstwert oder Anzahl. Nur ein Trichter je Auswertung.",
+  sortieren: "Reihenfolge des Ergebnisses, z. B. größter Umsatz zuerst.",
+  begrenzen: "Nur die ersten Zeilen behalten – zusammen mit „Sortieren“ für Top-Listen.",
+  ausgabe: "Was mit dem Ergebnis passiert: als Tabelle, Balken, Linie oder Kachel in ein Cockpit – vorhandenes oder neues. „Speichern“ stellt es dorthin; erneutes Speichern aktualisiert es.",
+  profi: "Dieser Teil wurde in der Profi-Ansicht von Hand geändert und lässt sich nur dort bearbeiten.",
+};
