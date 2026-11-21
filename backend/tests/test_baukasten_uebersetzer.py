@@ -185,7 +185,7 @@ def test_bueroplus_rezepte_passen_nur_zu_bueroplus():
             ("VogStorniertKz", "bit"), ("VogDat", "date"), ("VogGPreisNt", "decimal"), ("VogGEkRoh", "decimal")]]},
         {"full_name": "dbo.Adressen", "columns": [{"name": "AdrAdrNr", "type": "int"}, {"name": "AdrReNa2", "type": "nvarchar"}]}]})
     keys = [r["key"] for r in passende(bp, "mssql")]
-    assert keys == ["bp_umsatz_monat", "bp_top_kunden", "bp_abgewandert", "bp_kunden_vorjahr", "bp_umsatz_verkaeufer"], keys
+    assert keys == ["bp_umsatz_monat", "bp_umsatz_monat_vj", "bp_top_kunden", "bp_abgewandert", "bp_kunden_vorjahr", "bp_umsatz_verkaeufer"], keys
     assert not [r for r in passende(SCHEMA, "mssql") if r["system"] == "büro+"]
 
 
@@ -277,6 +277,42 @@ def test_im_cockpit_waehlbar():
     sql, p = _resolve_sql_run_params(e.sql, {"bk_tKunde_cLand": ["DE", "AT"], "bk_tKunde_cFirma": ""})
     assert p["bk_tKunde_cLand_empty"] == 0 and "[cLand] IN (:bk_tKunde_cLand__0, :bk_tKunde_cLand__1)" in sql
     assert p["bk_tKunde_cFirma_empty"] == 1
+
+
+
+def test_vorjahr_je_monat():
+    k = [{"type": "tabelle", "table": "Rechnung.tRechnung", "inner": [
+        {"type": "filter", "col": "dErstellt", "op": "im Zeitraum + Vorjahr"}]},
+         {"type": "verdichten", "by": [{"col": "dErstellt", "teil": "monat"}], "aggs": [{"fn": "Summe", "col": "fWert"}]}]
+    e = uebersetzen(k, SCHEMA, literal=True)
+    assert [x.name for x in e.spalten] == ["dErstellt (Monat)", "Summe fWert", "Summe fWert Vorjahr"]
+    assert "CASE WHEN [dErstellt] >= :von THEN [dErstellt] ELSE DATEADD(YEAR, 1, [dErstellt]) END AS [__bk_vj_achse]" in e.sql, e.sql
+    assert "CONVERT(char(7), [__bk_vj_achse], 126) AS [dErstellt (Monat)]" in e.sql
+    assert "GROUP BY CONVERT(char(7), [__bk_vj_achse], 126)" in e.sql
+    # Vorjahresbedingung der Kennzahlen bleibt auf dem echten Datum
+    assert "WHEN [dErstellt] >= DATEADD(YEAR, -1, :von)" in e.sql
+    # ohne Vorjahr: keine Achse
+    k2 = [{"type": "tabelle", "table": "Rechnung.tRechnung", "inner": []}, k[1]]
+    assert "__bk_vj_achse" not in uebersetzen(k2, SCHEMA).sql
+
+
+def test_zeilen_dahinter():
+    k = [{"type": "tabelle", "table": "Rechnung.tRechnung", "inner": [
+        {"type": "filter", "col": "dErstellt", "op": "im Zeitraum + Vorjahr"},
+        {"type": "join", "table": "dbo.tKunde", "links": "kKunde", "rechts": "kKunde", "inner": []}]},
+         {"type": "verdichten", "by": ["cFirma", {"col": "dErstellt", "teil": "monat"}], "aggs": [{"fn": "Summe", "col": "fWert"}]},
+         {"type": "spalten", "liste": [{"col": "dErstellt (Monat)", "als": "Monat"}, {"col": "Summe fWert", "als": "Umsatz"}]},
+         {"type": "sortieren", "col": "Umsatz"}, {"type": "begrenzen", "n": 5}]
+    e = uebersetzen(k, SCHEMA, literal=True)
+    assert e.gruppen == [None, "Monat"]          # cFirma per „Spalten“ weggelassen, Monat umbenannt
+    d = uebersetzen(k, SCHEMA, literal=True, detail=1)
+    assert "WHERE CONVERT(char(7), [dErstellt], 126) = :bk_dd AND [dErstellt] >= :von" in d.sql, d.sql
+    assert "GROUP BY" not in d.sql and "TOP" not in d.sql and "ORDER BY" not in d.sql
+    assert "cFirma" in [x.name for x in d.spalten] and "fWert" in [x.name for x in d.spalten]
+    d = uebersetzen(k, SCHEMA, literal=True, detail=0)
+    assert "WHERE [cFirma] = :bk_dd" in d.sql
+    with raises(BaukastenFehler, "Klick"):
+        uebersetzen(k, SCHEMA, detail=2)
 
 
 if __name__ == "__main__":

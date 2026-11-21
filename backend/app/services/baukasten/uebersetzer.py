@@ -153,6 +153,9 @@ class Dialekt:
     def bis_einschl(self, x: str) -> str:
         return {"mysql": f"DATE_ADD({x}, INTERVAL 1 DAY)", "postgresql": f"({x} + INTERVAL '1 day')"}.get(self.name, f"DATEADD(DAY, 1, {x})")
 
+    def nachjahr(self, x: str) -> str:
+        return {"mysql": f"DATE_ADD({x}, INTERVAL 1 YEAR)", "postgresql": f"(CAST({x} AS date) + INTERVAL '1 year')"}.get(self.name, f"DATEADD(YEAR, 1, {x})")
+
     def vorjahr(self, x: str) -> str:
         return {"mysql": f"DATE_SUB({x}, INTERVAL 1 YEAR)", "postgresql": f"(CAST({x} AS date) - INTERVAL '1 year')"}.get(self.name, f"DATEADD(YEAR, -1, {x})")
 
@@ -217,6 +220,13 @@ class Ergebnis:
     nutzt_zeitraum: bool = False
     # „im Cockpit wählbar“: je Feld {"param", "label", "table", "column"} – das Cockpit bekommt dafür eine Auswahlliste
     auswahl: list = field(default_factory=list)
+    # Ausgabenamen der Gruppenspalten von „Zusammenfassen“ (nach Umbenennen; None = per „Spalten“ weggelassen) –
+    # das sind die Spalten, über die ein Klick im Cockpit die Zeilen dahinter zeigen kann
+    gruppen: list = field(default_factory=list)
+
+
+DETAIL_PARAM = "bk_dd"
+VJ_ACHSE = "__bk_vj_achse"
 
 
 def auswahl_param(tabelle: str, spalte: str) -> str:
@@ -225,12 +235,16 @@ def auswahl_param(tabelle: str, spalte: str) -> str:
     return "bk_" + re.sub(r"[^A-Za-z0-9_]", "_", roh)[:50]
 
 
-def uebersetzen(kette: list, schema: Schema, dialekt: str = "mssql", literal: bool = False) -> Ergebnis:
-    """Kette → SQL. literal=True setzt Werte als geprüfte Literale (für das gespeicherte Mapping)."""
+def uebersetzen(kette: list, schema: Schema, dialekt: str = "mssql", literal: bool = False,
+                detail: int | None = None) -> Ergebnis:
+    """Kette → SQL. literal=True setzt Werte als geprüfte Literale (für das gespeicherte Mapping).
+
+    detail=n: statt des Ergebnisses die Zeilen VOR „Zusammenfassen“, die zur n-ten Gruppenspalte den Wert :bk_dd
+    haben – die Abfrage hinter dem Klick im Cockpit („Zeilen dahinter“)."""
     pruefen(kette)
     d = Dialekt(dialekt)
     bind = _Binder(literal=literal)
-    ctx = {"zeitraum": False, "vj_spalte": None, "auswahl": {}}
+    ctx = {"zeitraum": False, "vj_spalte": None, "auswahl": {}, "gruppen": []}
     stufen: list[Stufe] = []
     erg = Ergebnis(sql="", spalten=[])
 
@@ -337,6 +351,7 @@ def uebersetzen(kette: list, schema: Schema, dialekt: str = "mssql", literal: bo
                 sortierung = (umbenannt[sortierung[0]], sortierung[1])
             if ctx["vj_spalte"]:
                 ctx["vj_spalte"] = umbenannt.get(ctx["vj_spalte"])
+            ctx["gruppen"] = [umbenannt.get(g) if g else None for g in ctx["gruppen"]]
             vorher = stufen[-1]
             stufen.append(Stufe(f"s{len(stufen)}", f"SELECT {', '.join(aus)} FROM {vorher.name}", neu))
             spalten = neu
@@ -344,13 +359,41 @@ def uebersetzen(kette: list, schema: Schema, dialekt: str = "mssql", literal: bo
         elif t == "verdichten":
             spalten_in = spalten
             gruppe, aus, neu = [], [], []
-            for x in (b.get("by") or [])[:4]:
-                if not x:
-                    continue
+            vj = ctx["vj_spalte"] if ctx["vj_spalte"] in [x.name for x in spalten] else None
+            by = [x for x in (b.get("by") or [])[:4] if x]
+            if detail is not None:
+                # „Zeilen dahinter“: Zeilen vor dem Trichter, deren Gruppe dem angeklickten Wert entspricht
+                if not 0 <= detail < len(by):
+                    raise BaukastenFehler("Für den Klick fehlt die Spalte „je …“ in „Zusammenfassen“.")
+                x = by[detail]
                 col = x.get("col") if isinstance(x, dict) else x
                 teil = x.get("teil") if isinstance(x, dict) else None
                 s = _spalte(col, spalten)
-                expr = d.q(s.name)
+                expr = d.monat(d.q(s.name)) if teil == "monat" else d.jahr(d.q(s.name)) if teil == "jahr" else d.q(s.name)
+                bed = [f"{expr} = :{DETAIL_PARAM}"]
+                if vj:                             # Klick zeigt den gewählten Zeitraum, nicht die Vorjahreszeilen
+                    v = d.q(vj)
+                    bed.append(f"{v} >= :von AND {v} < {d.bis_einschl(':bis')}")
+                vorher = stufen[-1]
+                stufen.append(Stufe(f"s{len(stufen)}", f"SELECT * FROM {vorher.name}\nWHERE {' AND '.join(bed)}", spalten))
+                merken(bid, spalten_in, len(stufen) - 1)
+                limit = None
+                break
+            # Vorjahr je Monat/Jahr: Vorjahreszeilen um ein Jahr nach vorn schieben, damit März 2025 neben März 2026
+            # steht. Eigene Stufe, weil SQL Server ein GROUP BY mit Parametern (:von) nicht dem SELECT zuordnen kann.
+            achse = None
+            if vj and any((x.get("col") if isinstance(x, dict) else x) == vj for x in by):
+                v = d.q(vj)
+                vorher = stufen[-1]
+                stufen.append(Stufe(f"s{len(stufen)}",
+                                    f"SELECT *, CASE WHEN {v} >= :von THEN {v} ELSE {d.nachjahr(v)} END AS {d.q(VJ_ACHSE)} FROM {vorher.name}",
+                                    spalten))
+                achse = d.q(VJ_ACHSE)
+            for x in by:
+                col = x.get("col") if isinstance(x, dict) else x
+                teil = x.get("teil") if isinstance(x, dict) else None
+                s = _spalte(col, spalten)
+                expr = achse if achse and s.name == vj else d.q(s.name)
                 if teil in ("monat", "jahr"):
                     if s.typ != "datum":
                         raise BaukastenFehler(f"„{s.name}“ ist kein Datum – Monat/Jahr geht nur bei Datumsspalten.")
@@ -366,11 +409,11 @@ def uebersetzen(kette: list, schema: Schema, dialekt: str = "mssql", literal: bo
                 erg.spalten_je_block[bid] = [x.name for x in spalten_in]
                 merken(bid, spalten_in, len(stufen) - 1)
                 continue
+            ctx["gruppen"] = [n.name for n in neu]
             for a in (b.get("aggs") or [])[:8]:
                 fn = a.get("fn")
                 if fn not in AGG:
                     raise BaukastenFehler(f"Zusammenfassen: unbekannte Kennzahl {fn!r}.")
-                vj = ctx["vj_spalte"] if ctx["vj_spalte"] in [x.name for x in spalten] else None
                 if fn == "Anzahl":
                     name = "Anzahl"
                     wert_expr = "1"
@@ -449,6 +492,7 @@ def uebersetzen(kette: list, schema: Schema, dialekt: str = "mssql", literal: bo
     erg.params = dict(bind.werte)
     erg.nutzt_zeitraum = ctx["zeitraum"]
     erg.auswahl = list(ctx["auswahl"].values())
+    erg.gruppen = list(ctx["gruppen"])
     return erg
 
 

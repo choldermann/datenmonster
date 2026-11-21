@@ -38,6 +38,18 @@ REZEPTE = [
                {"type": "verdichten", "by": [{"col": "dErstellt", "teil": "monat"}, ""],
                 "aggs": [{"fn": "Summe", "col": "fVkNettoGesamt"}, {"fn": "Anzahl"}]},
                {"type": "sortieren", "col": "dErstellt (Monat)", "dir": "aufsteigend"}, _AUS]},
+    {"key": "umsatz_monat_vj", "name": "Umsatz je Monat gegen Vorjahr",
+     "text": "Netto-Umsatz je Monat im Zeitraum, daneben derselbe Monat im Vorjahr – als Linie im Cockpit",
+     "kette": [_START,
+               {"type": "tabelle", "table": _RE, "inner": [_OHNE_STORNO, {"type": "filter", "col": "dErstellt", "op": "im Zeitraum + Vorjahr"},
+                {"type": "join", "table": _ECK, "links": "kRechnung", "rechts": "kRechnung", "inner": []}]},
+               {"type": "verdichten", "by": [{"col": "dErstellt", "teil": "monat"}, ""],
+                "aggs": [{"fn": "Summe", "col": "fVkNettoGesamt"}]},
+               {"type": "spalten", "liste": [{"col": "dErstellt (Monat)", "als": "Monat"},
+                                             {"col": "Summe fVkNettoGesamt", "als": "Umsatz"},
+                                             {"col": "Summe fVkNettoGesamt Vorjahr", "als": "Umsatz Vorjahr"}]},
+               {"type": "sortieren", "col": "Monat", "dir": "aufsteigend"},
+               {"type": "ausgabe", "target": "Linie im Cockpit"}]},
     {"key": "top_kunden", "name": "Top-Kunden", "text": "Die 20 Kunden mit dem meisten Netto-Umsatz im Zeitraum, mit Ø Rechnung",
      "kette": [_START,
                {"type": "tabelle", "table": _RE, "inner": [_OHNE_STORNO, _ZEITRAUM,
@@ -122,6 +134,16 @@ REZEPTE += [
                {"type": "verdichten", "by": [{"col": "VogDat", "teil": "monat"}],
                 "aggs": [{"fn": "Summe", "col": "VogGPreisNt"}, {"fn": "Summe", "col": "VogGEkRoh"}, {"fn": "Anzahl"}]},
                _BP_ROH, {"type": "sortieren", "col": "VogDat (Monat)", "dir": "aufsteigend"}, _AUS]},
+    {"key": "bp_umsatz_monat_vj", "system": "büro+", "name": "Umsatz je Monat gegen Vorjahr",
+     "text": "Netto-Umsatz je Monat im Zeitraum, daneben derselbe Monat im Vorjahr – als Linie im Cockpit",
+     "kette": [_START, {"type": "tabelle", "table": _BV, "inner": copy.deepcopy(_BP_RECHNUNG[:3]) + [
+                   {"type": "filter", "col": "VogDat", "op": "im Zeitraum + Vorjahr"}]},
+               {"type": "verdichten", "by": [{"col": "VogDat", "teil": "monat"}], "aggs": [{"fn": "Summe", "col": "VogGPreisNt"}]},
+               {"type": "spalten", "liste": [{"col": "VogDat (Monat)", "als": "Monat"},
+                                             {"col": "Summe VogGPreisNt", "als": "Umsatz"},
+                                             {"col": "Summe VogGPreisNt Vorjahr", "als": "Umsatz Vorjahr"}]},
+               {"type": "sortieren", "col": "Monat", "dir": "aufsteigend"},
+               {"type": "ausgabe", "target": "Linie im Cockpit"}]},
     {"key": "bp_top_kunden", "system": "büro+", "name": "Top-Kunden",
      "text": "Die 20 Kunden mit dem meisten Netto-Umsatz im Zeitraum, mit Rohertrag und Ø Rechnung",
      "kette": [_START, {"type": "tabelle", "table": _BV, "inner": copy.deepcopy(_BP_RECHNUNG) + [copy.deepcopy(_BP_KUNDE)]},
@@ -224,7 +246,8 @@ FORMAT = """Kettenformat (JSON-Liste von Steinen, Reihenfolge = Ablauf):
 - im Winkel: {"type":"filter","col":"<Spalte>","op":"<Vergleich>","val":"<Wert>"}
   Vergleiche: = ≠ > < ≥ ≤ "ist einer von" (Werte mit Komma getrennt) "enthält" "beginnt mit" "ist leer" "ist nicht leer" "im Jahr" "in den letzten Tagen" "im Zeitraum" (Datum, nutzt den Zeitraum des Cockpits, ohne val)
   "im Zeitraum + Vorjahr" (Datum, ohne val): behält Zeitraum UND dieselbe Spanne ein Jahr davor; "verdichten" liefert dann je Kennzahl
-  zusätzlich "<Kennzahl> Vorjahr" (z. B. "Summe fWert Vorjahr") – für „gegen Vorjahr“-Fragen, gruppiert nach Nicht-Datumsspalten
+  zusätzlich "<Kennzahl> Vorjahr" (z. B. "Summe fWert Vorjahr") – für „gegen Vorjahr“-Fragen; auch je Monat/Jahr derselben
+  Datumsspalte (dann steht der Vorjahresmonat in derselben Zeile wie der Monat)
   "im Cockpit wählbar" (ohne val, optional "label":"Land"): der Wert wird im Cockpit aus einer Liste gewählt, nichts gewählt = alle –
   NUR wenn die Frage es ausdrücklich will („wählbar“, „zum Auswählen“, „je nach Auswahl“), nur im Winkel
 - WICHTIG: "join" steht NIE auf oberster Ebene, sondern immer in "inner" der Tabelle (wie im Beispiel).

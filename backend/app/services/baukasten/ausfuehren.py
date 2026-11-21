@@ -117,6 +117,7 @@ def rechnen(db, user, connection_id: int, kette: list, zeige: str | None = None,
         "spalten": [{"name": s.name, "typ": s.typ} for s in erg.spalten],
         "sql": gespeichert.sql, "nutzt_zeitraum": erg.nutzt_zeitraum,
         "auswahl": [{"param": a["param"], "label": a["label"]} for a in erg.auswahl],
+        "gruppen": erg.gruppen,
         "zeitraum": {"von": von, "bis": bis},
     }
 
@@ -178,6 +179,7 @@ def speichern(db, user, project_id, connection_id: int, name: str, kette: list, 
     vorhandenes = db.get(Mapping, mapping_id) if mapping_id else None
     if vorhandenes is not None and vorhandenes.project_id != project_id:
         raise BaukastenFehler("Das Mapping gehört zu einem anderen Projekt.")
+    alt_meta = ((vorhandenes.sql_nodes or [{}])[0].get("baukasten") or {}) if vorhandenes is not None else {}
     m = mapping_bauen(db, name, project_id, connection_id,
                       {"sql": erg.sql, "spalten": [{"name": s.name, "typ": _TYP[s.typ]} for s in erg.spalten]},
                       vorhandenes)
@@ -185,11 +187,52 @@ def speichern(db, user, project_id, connection_id: int, name: str, kette: list, 
     # erkennt der Baukasten das und zeigt den Teil als Profi-Stein statt ihn zu überschreiben.
     knoten = dict(m.sql_nodes[0])
     knoten["baukasten"] = {"kette": kette, "sql": erg.sql, "version": 1}
+    if alt_meta.get("detail_mapping_id"):          # zugehörige „Zeilen dahinter“ (detail_speichern) nicht verlieren
+        knoten["baukasten"]["detail_mapping_id"] = alt_meta["detail_mapping_id"]
     m.sql_nodes = [knoten]
     flag_modified(m, "sql_nodes")
     db.commit()
     db.refresh(m)
     return m
+
+
+def detail_speichern(db, user, project_id, connection_id: int, mapping, kette: list, erg) -> dict | None:
+    """„Klick zeigt die Zeilen dahinter“: zweites Mapping mit den Zeilen vor „Zusammenfassen“, gefiltert auf den
+    angeklickten Wert (:bk_dd). Seine ID steht am Knoten des Haupt-Mappings – erneutes Speichern aktualisiert es,
+    ausgeschaltet wird es wieder gelöscht (es gehört allein zu dieser Auswertung)."""
+    from app.models.mapping import Mapping
+    from app.services.query_builder.erzeugen import mapping_bauen
+    from .uebersetzer import DETAIL_PARAM
+    ausgabe = next((b for b in reversed(kette) if b.get("type") == "ausgabe"), None) or {}
+    knoten = dict(mapping.sql_nodes[0])
+    meta = dict(knoten.get("baukasten") or {})
+    alt = db.get(Mapping, meta["detail_mapping_id"]) if meta.get("detail_mapping_id") else None
+    if alt is not None and alt.project_id != project_id:
+        alt = None
+    gruppen = [g for g in erg.gruppen if g]
+    gewollt = bool(ausgabe.get("drilldown")) and ZIELE.get(ausgabe.get("target") or "") in ("table", "bar", "line") \
+        and ausgabe.get("cockpit") and gruppen
+    if not gewollt:
+        if alt is not None:
+            db.delete(alt)
+            meta.pop("detail_mapping_id", None)
+            knoten["baukasten"] = meta
+            mapping.sql_nodes = [knoten]
+            flag_modified(mapping, "sql_nodes")
+            db.commit()
+        return None
+    spalte = next((c for c in (ausgabe.get("drill_spalte"), ausgabe.get("x")) if c in gruppen), gruppen[0])
+    conn, schema = verbindung(db, connection_id, user)
+    det_erg = uebersetzen(kette, schema, conn.db_type, literal=True, detail=erg.gruppen.index(spalte))
+    det = mapping_bauen(db, f"{mapping.name} – Zeilen dahinter", project_id, connection_id,
+                        {"sql": det_erg.sql, "spalten": [{"name": s.name, "typ": _TYP[s.typ]} for s in det_erg.spalten]}, alt)
+    db.flush()                                     # neue ID schon jetzt – sie kommt an den Knoten des Haupt-Mappings
+    meta["detail_mapping_id"] = det.id
+    knoten["baukasten"] = meta
+    mapping.sql_nodes = [knoten]
+    flag_modified(mapping, "sql_nodes")
+    db.commit()
+    return {"mapping_id": det.id, "key_column": spalte, "param": DETAIL_PARAM}
 
 
 # ── Ausgabe „… im Cockpit“ ─────────────────────────────────────────────────
@@ -223,7 +266,7 @@ def _widget_config(art: str, ausgabe: dict, spalten: list) -> dict:
 
 
 def ins_cockpit(db, user, project_id, mapping, kette: list, spalten: list, nutzt_zeitraum: bool,
-                auswahl: list | None = None, connection_id: int | None = None) -> dict | None:
+                auswahl: list | None = None, connection_id: int | None = None, detail: dict | None = None) -> dict | None:
     """Widget für das Mapping in ein Cockpit (Formular) stellen – vorhandenes aktualisieren statt doppeln.
 
     Ausgabe-Stein: {"target": "Balken im Cockpit", "cockpit": <form_id>|"neu", "cockpit_name": "…",
@@ -236,6 +279,9 @@ def ins_cockpit(db, user, project_id, mapping, kette: list, spalten: list, nutzt
     if not ausgabe or not art or not ausgabe.get("cockpit"):
         return None
     cfg = _widget_config(art, ausgabe, spalten)
+    if detail and art in ("table", "bar", "line"):
+        cfg["drilldown"] = {"type": "mapping", "mapping_id": detail["mapping_id"], "key_column": detail["key_column"],
+                            "param": detail["param"], "title": f"Zeilen dahinter – {detail['key_column']}"}
 
     if ausgabe["cockpit"] == "neu":
         name = (ausgabe.get("cockpit_name") or "").strip() or mapping.name
@@ -244,6 +290,15 @@ def ins_cockpit(db, user, project_id, mapping, kette: list, spalten: list, nutzt
                     portal_config={"icon": "🧱"}, created_by=getattr(user, "id", None))
         db.add(form)
         db.flush()
+        # Die gespeicherte Kette zeigt ab jetzt auf genau dieses Cockpit – sonst legte jedes Speichern nach dem
+        # Neuladen der Seite ein weiteres „neues“ Cockpit an
+        knoten = dict(mapping.sql_nodes[0])
+        meta = dict(knoten.get("baukasten") or {})
+        meta["kette"] = [dict(b, cockpit=form.id) if b.get("type") == "ausgabe" and b.get("cockpit") == "neu" else b
+                         for b in (meta.get("kette") or kette)]
+        knoten["baukasten"] = meta
+        mapping.sql_nodes = [knoten]
+        flag_modified(mapping, "sql_nodes")
     else:
         try:
             form = db.get(Form, int(ausgabe["cockpit"]))

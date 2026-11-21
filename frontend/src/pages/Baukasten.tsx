@@ -533,6 +533,17 @@ export default function Baukasten() {
                         aendern(key, i, { y: e.target.checked ? [...basis, c] : basis.filter((x) => x !== c) }); }} /> {c}
                   </label>))}
               </span>)}
+            {imC && b.cockpit && b.target !== "Kachel im Cockpit" && (erg?.gruppen || []).some(Boolean) && (() => {
+              const gr: string[] = (erg.gruppen as (string | null)[]).filter(Boolean) as string[];
+              return (
+              <span className="bk-hex" style={{ flexBasis: "100%", flexWrap: "wrap" }}>
+                <label className="bk-tag" style={{ cursor: "pointer" }} onClick={(e) => e.stopPropagation()}
+                  title="Ein Klick auf eine Zeile im Cockpit zeigt die Zeilen vor „Zusammenfassen“ – z. B. die Rechnungen dieses Kunden oder Monats">
+                  <input type="checkbox" checked={!!b.drilldown} onChange={(e) => aendern(key, i, { drilldown: e.target.checked })} /> Klick auf eine Zeile zeigt die Zeilen dahinter</label>
+                {b.drilldown && gr.length > 1 && <><span>über</span>
+                  {sel("Klick über", gr, gr.includes(b.drill_spalte) ? b.drill_spalte : gr.includes(b.x) ? b.x : gr[0], (v) => aendern(key, i, { drill_spalte: v }), null)}</>}
+              </span>);
+            })()}
             {imC && b.target === "Kachel im Cockpit" && zahlen.length > 0 && (
               <span className="bk-hex" style={{ flexBasis: "100%" }}><span>Kennzahl</span>
                 {sel("Kennzahl", zahlen, b.wert || "", (v) => aendern(key, i, { wert: v }), "automatisch")}<span>(Summe aller Zeilen)</span></span>)}
