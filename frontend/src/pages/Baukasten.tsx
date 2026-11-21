@@ -617,10 +617,24 @@ export default function Baukasten() {
                     aendern(key, i, { links, rechts: vs.rechts, vorgeschlagen: true });
                   }).catch(() => {});
               }, `bk-tab-${bid}`)}
+              {b.type === "join" && (() => {
+                // Links: Spalte der bisherigen Zeilen (Aus Tabelle + weiter oben dazugeholte), rechts: Spalte der neuen Tabelle
+                const kurz = (t?: string) => String(t || "").split(".").pop() || "…";
+                const winkel = kette[Number(key.split(".")[0])];
+                const frueher = (winkel?.inner || []).slice(0, i).filter((x: any) => x.type === "join" && x.table && !x.ohne).map((x: any) => kurz(x.table));
+                const bisher = [kurz(winkel?.table), ...frueher].join(" + ");
+                return <span className="bk-hex" style={{ flexBasis: "100%", flexWrap: "wrap" }}
+                  title="Zu jeder bisherigen Zeile werden die Zeilen der neuen Tabelle gesucht, bei denen beide Spalten gleich sind">
+                  <span>verbunden über</span>
+                  {sel("Spalte der bisherigen Zeilen", cols, b.links, (v) => aendern(key, i, { links: v, vorgeschlagen: false }))}
+                  <span className="bk-tag">aus {bisher}</span>
+                  <span>=</span>
+                  {sel("Spalte der neuen Tabelle", tabSpalten[b.table] || [], b.rechts, (v) => aendern(key, i, { rechts: v, vorgeschlagen: false }))}
+                  <span className="bk-tag">in {kurz(b.table)}</span>
+                  {b.vorgeschlagen && <span className="bk-tag" title="Aus den Schlüsseln der Tabellen erkannt">✓ vorgeschlagen</span>}
+                </span>;
+              })()}
               {b.type === "join" && <>
-                <span>über</span>{sel("links", cols, b.links, (v) => aendern(key, i, { links: v, vorgeschlagen: false }))}
-                <span>=</span>{sel("rechts", tabSpalten[b.table] || [], b.rechts, (v) => aendern(key, i, { rechts: v, vorgeschlagen: false }))}
-                {b.vorgeschlagen && <span className="bk-tag" title="Aus den Schlüsseln der Tabellen erkannt">✓ vorgeschlagen</span>}
                 <select className="bk-chip" aria-label="Welche Zeilen bleiben" value={b.ohne ? "ohne" : b.alle ? "alle" : "mit"} onClick={(e) => e.stopPropagation()}
                   title="nur mit Treffer: INNER JOIN · auch ohne Treffer: LEFT JOIN, fehlende Werte bleiben leer · nur OHNE Treffer: z. B. Kunden ohne Rechnung"
                   onChange={(e) => aendern(key, i, { alle: e.target.value === "alle", ohne: e.target.value === "ohne" })}>
