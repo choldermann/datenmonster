@@ -124,14 +124,20 @@ def warnungen(kette: list, zaehler: dict) -> dict:
         for j, x in enumerate(b.get("inner") or []):
             bid = f"{i}:{j}"
             n = zaehler.get(bid)
-            if x.get("type") == "join" and vorher is not None and n is not None:
+            if x.get("type") == "join" and x.get("alle") and any(f.get("type") == "filter" and f.get("col") for f in x.get("inner") or []):
+                aus[bid] = ("„Auch ohne Treffer behalten“ ist an: „Nur wenn“ in diesem Winkel filtert dann keine Zeilen weg, "
+                            "sondern lässt nur die dazugeholten Spalten leer. Soll nur gezählt werden, was passt – Haken herausnehmen.")
+            elif x.get("type") == "join" and vorher is not None and n is not None:
                 if n > vorher:
                     aus[bid] = (f"Aus {vorher:,} werden {n:,} Zeilen: zu einer Zeile passen mehrere Einträge aus "
                                 f"„{x.get('table')}“. Summen über Spalten der bisherigen Tabelle wären danach zu hoch. "
                                 f"Gewollt (z. B. Positionen je Rechnung)? Dann ist alles gut – sonst im Winkel „Dazuholen“ "
                                 f"mit „Nur wenn“ auf genau einen Eintrag eingrenzen.").replace(",", ".")
                 elif n == 0 and vorher > 0:
-                    aus[bid] = f"Nach dem Dazuholen bleibt keine Zeile übrig – passt die Verknüpfung über „{x.get('links')}“?"
+                    bed = [f"{f.get('col')} {f.get('op')} {f.get('val') or ''}".strip() for f in x.get("inner") or []
+                           if f.get("type") == "filter" and f.get("col")]
+                    aus[bid] = (f"Nach dem Dazuholen bleibt keine Zeile übrig – passt die Verknüpfung über „{x.get('links')}“"
+                                + (f" oder der Wert in „Nur wenn {'; '.join(bed)}“?" if bed else "?"))
             elif x.get("type") == "filter" and n == 0 and vorher:
                 aus[bid] = (f"„Nur wenn {x.get('col')} {x.get('op')} {x.get('val') or ''}“ lässt keine Zeile übrig – "
                             f"passt der Wert so, wie er in der Spalte steht?")

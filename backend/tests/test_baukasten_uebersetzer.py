@@ -154,6 +154,39 @@ def test_warnung_bei_vervielfachung():
     assert w == {}
     w = warnungen(k, {":0:kopf": 30879, "0:0": 10219, "0:1": 20438})
     assert "Aus 10.219 werden 20.438 Zeilen" in w["0:1"]
+    k[0]["inner"][1].update(alle=True, inner=[{"type": "filter", "col": "cOrt", "op": "=", "val": "Stuttgart"}])
+    assert "filtert dann keine Zeilen weg" in warnungen(k, {":0:kopf": 10, "0:0": 10, "0:1": 10})["0:1"]
+
+
+def test_ki_normalisierung_alle_mit_filter_aus():
+    from app.services.baukasten.rezepte import _normalisieren
+    k = _normalisieren([{"type": "tabelle", "table": "x", "inner": [
+        {"type": "join", "table": "y", "links": "a", "rechts": "a", "alle": True, "inner": [{"type": "filter", "col": "o"}]},
+        {"type": "join", "table": "z", "links": "a", "rechts": "a", "alle": True, "inner": []}]}])
+    assert [j["alle"] for j in k[0]["inner"]] == [False, True]
+
+
+def test_ist_einer_von_und_differenz_gerundet():
+    k = [{"type": "tabelle", "table": "Rechnung.tRechnung", "inner": [
+        {"type": "filter", "col": "cRechnungsNr", "op": "ist einer von", "val": "Rechnung I, Sammel Rechnung"},
+        {"type": "filter", "col": "kKunde", "op": "ist einer von", "val": "1; 2,5"}]},
+         {"type": "rechnen", "name": "Diff", "a": "fWert", "op": "−", "b": "kKunde"}]
+    sql = uebersetzen(k, SCHEMA, literal=True).sql
+    assert "t0.[cRechnungsNr] IN (N'Rechnung I', N'Sammel Rechnung')" in sql, sql
+    assert "t0.[kKunde] IN (1, 2.5)" in sql, sql
+    assert "ROUND(CAST([fWert] AS float) - CAST([kKunde] AS float), 2) AS [Diff]" in sql, sql
+
+
+def test_bueroplus_rezepte_passen_nur_zu_bueroplus():
+    from app.services.baukasten.rezepte import passende
+    bp = Schema({"tables": [
+        {"full_name": "dbo.vVorgang", "columns": [{"name": n, "type": t} for n, t in [
+            ("VogID", "int"), ("VogAdrNr", "int"), ("VogArt", "nvarchar"), ("VogVerk", "nvarchar"), ("VogGebuchtKz", "bit"),
+            ("VogStorniertKz", "bit"), ("VogDat", "date"), ("VogGPreisNt", "decimal"), ("VogGEkRoh", "decimal")]]},
+        {"full_name": "dbo.Adressen", "columns": [{"name": "AdrAdrNr", "type": "int"}, {"name": "AdrReNa2", "type": "nvarchar"}]}]})
+    keys = [r["key"] for r in passende(bp, "mssql")]
+    assert keys == ["bp_umsatz_monat", "bp_top_kunden", "bp_umsatz_verkaeufer"], keys
+    assert not [r for r in passende(SCHEMA, "mssql") if r["system"] == "büro+"]
 
 
 if __name__ == "__main__":

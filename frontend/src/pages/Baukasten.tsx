@@ -326,7 +326,7 @@ export default function Baukasten() {
             <span className="t">{oben ? "Nur Gruppen mit" : "Nur wenn"}</span>
             <span className="bk-hex">{sel("Spalte", spalten, b.col, (v) => aendern(key, i, { col: v }))}
               {sel("Vergleich", OPS, b.op, (v) => aendern(key, i, { op: v }), null, "bk-op")}
-              {!OHNE_WERT.has(b.op) && <input className={`bk-oval${String(b.val ?? "").trim() === "" ? " leer" : ""}`} value={b.val ?? ""} placeholder="Wert"
+              {!OHNE_WERT.has(b.op) && <input className={`bk-oval${String(b.val ?? "").trim() === "" ? " leer" : ""}`} value={b.val ?? ""} placeholder={b.op === "ist einer von" ? "Wert 1, Wert 2 …" : "Wert"}
                 aria-label="Wert" onClick={(e) => e.stopPropagation()} onChange={(e) => aendern(key, i, { val: e.target.value })} />}
               {b.op === "im Zeitraum" && <span className="bk-tag">Zeitraum des Cockpits</span>}
             </span>

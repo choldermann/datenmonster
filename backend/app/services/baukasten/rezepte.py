@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import copy
 import json
+from datetime import date
 import logging
 
 from .uebersetzer import BaukastenFehler, Schema, uebersetzen
@@ -82,6 +83,76 @@ REZEPTE = [
 ]
 
 
+
+# ── büro+ (microtech) ──────────────────────────────────────────────────────
+# Tabellen aus den büro+-Exporten (tools/bueroplus): Spalten heißen wie die büro+-Felder. Umsatz wie im
+# büro+ GF-Cockpit: gebuchte, nicht stornierte „Rechnung I“ und „Sammel Rechnung“ (Rechnungskorrekturen getrennt).
+_BV = "dbo.vVorgang"
+_BP = "dbo.vVorgangPosition"
+_BA = "dbo.Adressen"
+_BART = "dbo.Artikel"
+_BP_RECHNUNG = [{"type": "filter", "col": "VogArt", "op": "ist einer von", "val": "Rechnung I, Sammel Rechnung"},
+                {"type": "filter", "col": "VogGebuchtKz", "op": "=", "val": "1"},
+                {"type": "filter", "col": "VogStorniertKz", "op": "=", "val": "0"},
+                {"type": "filter", "col": "VogDat", "op": "im Zeitraum"}]
+_BP_KUNDE = {"type": "join", "table": _BA, "links": "VogAdrNr", "rechts": "AdrAdrNr", "alle": True, "inner": []}
+_BP_ROH = {"type": "rechnen", "name": "Rohertrag", "a": "Summe VogGPreisNt", "op": "−", "b": "Summe VogGEkRoh"}
+_BP_POS_INNEN = [{"type": "filter", "col": "ArtNr", "op": "ist nicht leer"},
+                 {"type": "join", "table": _BV, "links": "VogID", "rechts": "VogID", "inner": copy.deepcopy(_BP_RECHNUNG)},
+                 {"type": "join", "table": _BART, "links": "ArtNr", "rechts": "ArtArtNr", "alle": True, "inner": []}]
+
+REZEPTE += [
+    {"key": "bp_umsatz_monat", "system": "büro+", "name": "Umsatz je Monat",
+     "text": "Netto-Umsatz, Rohertrag und Anzahl Rechnungen je Monat im Zeitraum (gebucht, ohne Stornos, ohne Rechnungskorrekturen)",
+     "kette": [_START, {"type": "tabelle", "table": _BV, "inner": copy.deepcopy(_BP_RECHNUNG)},
+               {"type": "verdichten", "by": [{"col": "VogDat", "teil": "monat"}],
+                "aggs": [{"fn": "Summe", "col": "VogGPreisNt"}, {"fn": "Summe", "col": "VogGEkRoh"}, {"fn": "Anzahl"}]},
+               _BP_ROH, {"type": "sortieren", "col": "VogDat (Monat)", "dir": "aufsteigend"}, _AUS]},
+    {"key": "bp_top_kunden", "system": "büro+", "name": "Top-Kunden",
+     "text": "Die 20 Kunden mit dem meisten Netto-Umsatz im Zeitraum, mit Rohertrag und Ø Rechnung",
+     "kette": [_START, {"type": "tabelle", "table": _BV, "inner": copy.deepcopy(_BP_RECHNUNG) + [copy.deepcopy(_BP_KUNDE)]},
+               {"type": "verdichten", "by": ["VogAdrNr", "AdrReNa2"],
+                "aggs": [{"fn": "Summe", "col": "VogGPreisNt"}, {"fn": "Summe", "col": "VogGEkRoh"}, {"fn": "Anzahl"}]},
+               _BP_ROH, {"type": "rechnen", "name": "Ø Rechnung", "a": "Summe VogGPreisNt", "op": "÷", "b": "Anzahl"},
+               {"type": "sortieren", "col": "Summe VogGPreisNt", "dir": "absteigend"}, {"type": "begrenzen", "n": 20}, _AUS]},
+    {"key": "bp_umsatz_verkaeufer", "system": "büro+", "name": "Umsatz je Verkäufer",
+     "text": "Netto-Umsatz, Rohertrag und Rechnungen je Bearbeiter (VogVerk) im Zeitraum",
+     "kette": [_START, {"type": "tabelle", "table": _BV, "inner": copy.deepcopy(_BP_RECHNUNG)},
+               {"type": "verdichten", "by": ["VogVerk"],
+                "aggs": [{"fn": "Summe", "col": "VogGPreisNt"}, {"fn": "Summe", "col": "VogGEkRoh"}, {"fn": "Anzahl"}]},
+               _BP_ROH, {"type": "sortieren", "col": "Summe VogGPreisNt", "dir": "absteigend"}, _AUS]},
+    {"key": "bp_bestseller", "system": "büro+", "name": "Bestseller-Artikel",
+     "text": "Die 20 Artikel mit dem meisten Netto-Umsatz im Zeitraum, mit Menge und Rohertrag",
+     "kette": [_START, {"type": "tabelle", "table": _BP, "inner": copy.deepcopy(_BP_POS_INNEN)},
+               {"type": "verdichten", "by": ["ArtNr", "ArtBez1"],
+                "aggs": [{"fn": "Summe", "col": "BuchMge"}, {"fn": "Summe", "col": "NettoPos"}, {"fn": "Summe", "col": "RohertragPos"}]},
+               {"type": "sortieren", "col": "Summe NettoPos", "dir": "absteigend"}, {"type": "begrenzen", "n": 20}, _AUS]},
+    {"key": "bp_warengruppen", "system": "büro+", "name": "Umsatz je Warengruppe",
+     "text": "Netto-Umsatz und Rohertrag je Warengruppe im Zeitraum",
+     "kette": [_START, {"type": "tabelle", "table": _BP, "inner": copy.deepcopy(_BP_POS_INNEN)},
+               {"type": "verdichten", "by": ["ArtWgrNr", "ArtWgrNrInfo"],
+                "aggs": [{"fn": "Summe", "col": "NettoPos"}, {"fn": "Summe", "col": "RohertragPos"}]},
+               {"type": "sortieren", "col": "Summe NettoPos", "dir": "absteigend"}, _AUS]},
+    {"key": "bp_offene_angebote", "system": "büro+", "name": "Angebote der letzten 90 Tage",
+     "text": "Nicht stornierte Angebote aus der Vorgangsübersicht, größter Wert zuerst, mit Kunde",
+     "kette": [_START, {"type": "tabelle", "table": "dbo.Vorgang", "inner": [
+                   {"type": "filter", "col": "VogArt", "op": "=", "val": "Angebot"},
+                   {"type": "filter", "col": "VogStorniertKz", "op": "=", "val": "0"},
+                   {"type": "filter", "col": "VogDat", "op": "in den letzten Tagen", "val": "90"},
+                   copy.deepcopy(_BP_KUNDE)]},
+               {"type": "sortieren", "col": "VogGPreisNt", "dir": "absteigend"}, _AUS]},
+    {"key": "bp_lieferscheine", "system": "büro+", "name": "Lieferscheine ohne Rechnung",
+     "text": "Nicht stornierte Lieferscheine in der Vorgangsübersicht, älteste zuerst, mit Kunde",
+     "kette": [_START, {"type": "tabelle", "table": "dbo.Vorgang", "inner": [
+                   {"type": "filter", "col": "VogArt", "op": "=", "val": "Lieferschein"},
+                   {"type": "filter", "col": "VogStorniertKz", "op": "=", "val": "0"},
+                   copy.deepcopy(_BP_KUNDE)]},
+               {"type": "sortieren", "col": "VogDat", "dir": "aufsteigend"}, _AUS]},
+]
+for _r in REZEPTE:
+    _r.setdefault("system", "JTL")
+
+
 def _tabellen_aufloesen(kette: list, schema: Schema) -> list:
     """Tabellennamen auf die Schreibweise der Datenbank bringen (dbo.tAdresse ↔ dbo.tadresse)."""
     namen = {t.lower(): t for t in schema.tabellen}
@@ -106,7 +177,7 @@ def passende(schema: Schema, dialekt: str) -> list[dict]:
         except BaukastenFehler as e:
             logger.info("Rezept %s passt hier nicht: %s", r["key"], e)
             continue
-        aus.append({"key": r["key"], "name": r["name"], "text": r["text"], "kette": k})
+        aus.append({"key": r["key"], "name": r["name"], "text": r["text"], "system": r["system"], "kette": k})
     return aus
 
 
@@ -115,12 +186,13 @@ FORMAT = """Kettenformat (JSON-Liste von Steinen, Reihenfolge = Ablauf):
 - {"type":"start","trigger":"Wenn das Cockpit öffnet"}  (immer zuerst)
 - {"type":"tabelle","table":"<Schema.Tabelle>","inner":[ … ]}  genau EINE, enthält nur "filter" und "join"
 - im Winkel: {"type":"filter","col":"<Spalte>","op":"<Vergleich>","val":"<Wert>"}
-  Vergleiche: = ≠ > < ≥ ≤ "enthält" "beginnt mit" "ist leer" "ist nicht leer" "im Jahr" "in den letzten Tagen" "im Zeitraum" (Datum, nutzt den Zeitraum des Cockpits, ohne val)
+  Vergleiche: = ≠ > < ≥ ≤ "ist einer von" (Werte mit Komma getrennt) "enthält" "beginnt mit" "ist leer" "ist nicht leer" "im Jahr" "in den letzten Tagen" "im Zeitraum" (Datum, nutzt den Zeitraum des Cockpits, ohne val)
 - WICHTIG: "join" steht NIE auf oberster Ebene, sondern immer in "inner" der Tabelle (wie im Beispiel).
 - Ein "join" enthält in "inner" NUR "filter" – nie einen weiteren "join". Weitere Tabellen kommen als weiterer "join"
   direkt in "inner" der Tabelle; "links" darf dann eine Spalte einer schon dazugeholten Tabelle sein.
 - Textwerte so, wie sie in der Datenbank stehen (Länder in Adressen oft ausgeschrieben, z. B. "Österreich"; ISO-Codes in cISO/cVersandlandISO, z. B. "AT").
 - im Winkel: {"type":"join","table":"<Schema.Tabelle>","links":"<Spalte bisher>","rechts":"<Spalte der neuen Tabelle>","alle":false,"inner":[nur filter auf die neue Tabelle]}
+  "alle":true behält auch Zeilen ohne Treffer – nur ohne "filter" im Winkel sinnvoll; soll die neue Tabelle eingrenzen, "alle":false.
   Spalten der dazugeholten Tabelle, die es schon gibt, heißen danach "<Spalte> (<Tabelle ohne Schema>)", z. B. "cFirma (tAdresse)".
 - {"type":"rechnen","name":"<neu>","a":"<Spalte>","op":"+|−|×|÷","b":"<Spalte oder Zahl>"}
 - {"type":"verdichten","by":["<Spalte>" oder {"col":"<Datumsspalte>","teil":"monat|jahr"}, …],"aggs":[{"fn":"Summe|Durchschnitt|Höchstwert|Tiefstwert","col":"<Zahlspalte>"},{"fn":"Anzahl"}]}
@@ -167,6 +239,8 @@ def _normalisieren(kette: list) -> list:
             if b.get("type") == "join":
                 kinder = b.get("inner") or []
                 b["inner"] = [x for x in kinder if x.get("type") == "filter"]
+                if b["inner"] and b.get("alle"):
+                    b["alle"] = False      # „Nur wenn“ im Winkel soll eingrenzen – mit „alle behalten“ würde es nichts filtern
                 neu.append(b)
                 neu.extend(flach([x for x in kinder if x.get("type") == "join"]))
             else:
@@ -188,6 +262,8 @@ def _unvollstaendig(kette: list) -> str:
                 return f"„Dazuholen {b.get('table') or ''}“ braucht table, links und rechts (genau diese Schlüssel)."
             if t == "filter" and not b.get("col"):
                 return "Ein „filter“ braucht col."
+            if t == "filter" and b.get("op") not in ("ist leer", "ist nicht leer", "im Zeitraum") and str(b.get("val") or "").strip() == "":
+                return f"„filter {b.get('col')} {b.get('op')}“ braucht einen Wert in val (z. B. die Jahreszahl)."
             if t == "rechnen" and (not b.get("a") or b.get("b") in (None, "")):
                 return "„rechnen“ braucht a und b."
             if t == "sortieren" and not b.get("col"):
@@ -202,6 +278,29 @@ def _unvollstaendig(kette: list) -> str:
     return lauf(kette)
 
 
+_REGELN_JTL = (
+    "Lasse stornierte Rechnungen weg (nStorno = 0). "
+    "Nimm Tabellen (z. B. Rechnung.tRechnung, Rechnung.tRechnungEckdaten, Rechnung.tRechnungPosition, dbo.tAdresse, dbo.tArtikel) "
+    "statt Sichten (Namen mit v… oder lv…) und verknüpfe nur über die angegebenen Beziehungen. "
+    "Holst du Adressen dazu, grenze auf eine je Kunde ein (nStandard = 1 und nTyp = 1), sonst verdoppeln sich die Zeilen.")
+_REGELN_BUEROPLUS = (
+    "Die Datenbank kommt aus microtech büro+; Spalten heißen wie die büro+-Felder. Belege: dbo.vVorgang (Archiv und "
+    "Übersicht zusammen, VogArt = Belegart, VogDat = Belegdatum, VogGPreisNt = Netto, VogGEkRoh = Einkauf, VogVerk = Bearbeiter, "
+    "VogAdrNr = Kunde). Umsatz = VogArt „ist einer von“ „Rechnung I, Sammel Rechnung“ mit VogGebuchtKz = 1 und "
+    "VogStorniertKz = 0; Rechnungskorrekturen (VogArt = Rechnungskorrektur) haben positive Beträge und mindern den Umsatz. "
+    "Positionen: dbo.vVorgangPosition über VogID (ArtNr, BuchMge = Menge, NettoPos, EkPos, RohertragPos – schon mit Preisfaktor). "
+    "Offene Angebote, Aufträge (VogArt = Auftragsbestätigung) und Lieferscheine stehen in dbo.Vorgang (nur die Übersicht); "
+    "dort nur VogStorniertKz = 0 filtern, nicht VogGebuchtKz, und nach VogGPreisNt oder VogDat sortieren. Kunden: dbo.Adressen über "
+    "VogAdrNr = AdrAdrNr (Name in AdrReNa2, Ort in AdrReOrt, eine Zeile je Adresse; gesperrt = AdrGspKz = 1, AdrStatus ist "
+    "nur ein Freitext). Artikel: dbo.Artikel über ArtNr = ArtArtNr "
+    "(ArtBez1, ArtWgrNr/ArtWgrNrInfo = Warengruppe, ArtWgrNrInfo ist „Nummer Name“, z. B. „15 Pizzakarton“ → mit „enthält“ suchen). "
+    "Umsatz, Menge oder Rohertrag je Artikel/Warengruppe: von dbo.vVorgangPosition ausgehen und dbo.vVorgang über VogID mit "
+    "denselben Umsatz-Filtern (Belegart, gebucht, nicht storniert, Zeitraum) im Winkel dazuholen – sonst zählen Angebote und "
+    "Lieferscheine mit. Werte je Beleg, Kunde, Verkäufer oder Monat (Umsatz, Einkauf, Rohertrag = Summe VogGPreisNt − "
+    "Summe VogGEkRoh) kommen direkt aus dbo.vVorgang, ohne Positionen. Nimm nie dbo.VorgangArchiv, dbo.VorgangPosition oder "
+    "dbo.VorgangPositionArchiv (Teilstücke), sondern die Sichten dbo.vVorgang und dbo.vVorgangPosition, und nie Tabellen aus dem Schema stg (Rohdaten des Imports).")
+
+
 async def ki_kette(svc, schema_json: dict, schema: Schema, dialekt: str, text: str, probe=None) -> dict:
     """probe(kette) → Warnungen eines Probelaufs (z. B. „keine Zeile übrig“); sie gehen zur Nachbesserung zurück."""
     from app.services.schema_cache_service import (beziehungen_ableiten, extract_keywords,
@@ -211,17 +310,22 @@ async def ki_kette(svc, schema_json: dict, schema: Schema, dialekt: str, text: s
     bez = beziehungen_ableiten(schema_json, von_tabellen=tabellen, grenze=60)
     bez_text = "\n".join(f"{b['from_table']}.{b['from_col']} → {b['to_table']}.{b['to_col']}"
                          for b in bez if b["to_table"] in tabellen and b["quelle"] != "unsicher")[:4000]
-    beispiel = json.dumps(_tabellen_aufloesen(REZEPTE[1]["kette"], schema), ensure_ascii=False)
-    beispiel2 = json.dumps(_tabellen_aufloesen(REZEPTE[2]["kette"], schema), ensure_ascii=False)
+    # Beispiele und Fachregeln passend zur Datenbank (JTL oder büro+) – erkannt an den Rezepten, die hier passen
+    passt = passende(schema, dialekt)
+    art = "büro+" if any(r["system"] == "büro+" for r in passt) else "JTL"
+    beisp = [r for r in passt if r["system"] == art and r["key"] in ("top_kunden", "bestseller", "bp_top_kunden", "bp_bestseller")]
+    if not beisp:
+        beisp = [r for r in REZEPTE if r["key"] in ("top_kunden", "bestseller")]
+    beispiele = "\n\n".join(f"Beispiel ({r['name']}):\n{json.dumps(_tabellen_aufloesen(r['kette'], schema), ensure_ascii=False)}"
+                             for r in beisp)
     system = (
         "Du baust Auswertungen für einen Händler aus Bausteinen. Antworte NUR mit JSON "
         '{"kette_json":"<die Kette als JSON-Text>","hinweis":"<ein kurzer deutscher Satz, was die Auswertung zeigt oder was fehlt>"}. '
-        "Nutze ausschließlich Tabellen und Spalten aus der Liste unten, exakt so geschrieben. Bevorzuge Netto-Werte, "
-        "lasse stornierte Rechnungen weg (nStorno = 0), und nutze für Zeiträume ohne genaue Angabe „im Zeitraum“. "
-        "Nimm Tabellen (z. B. Rechnung.tRechnung, Rechnung.tRechnungEckdaten, Rechnung.tRechnungPosition, dbo.tAdresse, dbo.tArtikel) "
-        "statt Sichten (Namen mit v… oder lv…) und verknüpfe nur über die angegebenen Beziehungen. "
-        "Holst du Adressen dazu, grenze auf eine je Kunde ein (nStandard = 1 und nTyp = 1), sonst verdoppeln sich die Zeilen.\n\n"
-        f"{FORMAT}\n\nBeispiel (Top-Kunden):\n{beispiel}\n\nBeispiel (Bestseller über Rechnungspositionen):\n{beispiel2}\n\n"
+        "Nutze ausschließlich Tabellen und Spalten aus der Liste unten, exakt so geschrieben. Bevorzuge Netto-Werte "
+        "und nutze für Zeiträume ohne genaue Angabe „im Zeitraum“. "
+        f"Heute ist der {date.today():%d.%m.%Y} („dieses Jahr“ = {date.today().year}, „letztes Jahr“ = {date.today().year - 1}). "
+        + (_REGELN_BUEROPLUS if art == "büro+" else _REGELN_JTL) +
+        f"\n\n{FORMAT}\n\n{beispiele}\n\n"
         f"Beziehungen:\n{bez_text or '(keine erkannt)'}\n\nTabellen:\n{schema_json_to_text(teil, max_tables=12)[:14000]}")
     nachrichten = [{"role": "system", "content": system}, {"role": "user", "content": text}]
     # Strenges Antwortformat (OpenAI-kompatibel): die verschachtelte Kette kommt als JSON-Text

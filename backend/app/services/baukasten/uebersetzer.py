@@ -178,7 +178,7 @@ def vorschau_begrenzen(sql: str, n: int, dialekt: str) -> str:
 
 
 # ── Übersetzen ─────────────────────────────────────────────────────────────
-OPS = ("=", "≠", ">", "<", "≥", "≤", "enthält", "beginnt mit", "ist leer", "ist nicht leer",
+OPS = ("=", "≠", ">", "<", "≥", "≤", "ist einer von", "enthält", "beginnt mit", "ist leer", "ist nicht leer",
        "im Jahr", "in den letzten Tagen", "im Zeitraum")
 RECHEN_OPS = {"+": "+", "−": "-", "-": "-", "×": "*", "*": "*", "÷": "/", "/": "/"}
 AGG = {"Summe": "SUM", "Durchschnitt": "AVG", "Höchstwert": "MAX", "Tiefstwert": "MIN", "Anzahl": "COUNT"}
@@ -251,7 +251,12 @@ def uebersetzen(kette: list, schema: Schema, dialekt: str = "mssql", literal: bo
             op = RECHEN_OPS.get(b.get("op") or "")
             if not op:
                 raise BaukastenFehler("Rechnen: unbekannte Rechenart.")
-            ausdruck = f"ROUND(CAST({a} AS float) / NULLIF(CAST({c} AS float), 0), 2)" if op == "/" else f"({a} {op} {c})"
+            if op == "/":
+                ausdruck = f"ROUND(CAST({a} AS float) / NULLIF(CAST({c} AS float), 0), 2)"
+            elif op in "+-":                       # Differenz zweier Geldbeträge: ohne Rechenrauschen (…,37000000002)
+                ausdruck = f"ROUND(CAST({a} AS float) {op} CAST({c} AS float), 2)"
+            else:
+                ausdruck = f"({a} {op} {c})"
             if any(s.name.lower() == name.lower() for s in spalten):
                 raise BaukastenFehler(f"Rechnen: die Spalte „{name}“ gibt es schon – anderen Namen wählen.")
             vorher = stufen[-1]
@@ -480,6 +485,17 @@ def _bedingung(b: dict, spalten: list[Spalte], d: Dialekt, bind, ctx, alias=None
         except ValueError:
             raise BaukastenFehler("„in den letzten Tagen“: bitte eine Zahl.")
         return f"{x} >= {d.tage_zurueck(n)}"
+    if op == "ist einer von":
+        # Werte mit Semikolon (oder, wenn keins da ist, mit Komma) getrennt: „Rechnung I, Sammel Rechnung“ → IN (…)
+        teile = [t.strip() for t in w.split(";" if ";" in w else ",") if t.strip()]
+        if s.typ == "zahl":
+            try:
+                gebunden = [bind(float(t.replace(",", ".")), "zahl") for t in teile]
+            except ValueError:
+                raise BaukastenFehler(f"„{s.name}“ ist eine Zahl – bitte die Werte mit Semikolon trennen, z. B. 1; 2; 3.")
+        else:
+            gebunden = [bind(t, "text") for t in teile]
+        return f"{x} IN ({', '.join(gebunden)})" if gebunden else ""
     if op in ("enthält", "beginnt mit"):
         roh = w.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         muster = f"%{roh}%" if op == "enthält" else f"{roh}%"

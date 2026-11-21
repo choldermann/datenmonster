@@ -16,7 +16,7 @@ export const ART: Record<string, { name: string; farbe: string; form: "hut" | "w
 };
 export const PROFI_FARBE = "#6b7178";
 
-export const OPS = ["=", "≠", ">", "<", "≥", "≤", "enthält", "beginnt mit", "ist leer", "ist nicht leer", "im Jahr", "in den letzten Tagen", "im Zeitraum"];
+export const OPS = ["=", "≠", ">", "<", "≥", "≤", "ist einer von", "enthält", "beginnt mit", "ist leer", "ist nicht leer", "im Jahr", "in den letzten Tagen", "im Zeitraum"];
 export const OHNE_WERT = new Set(["ist leer", "ist nicht leer", "im Zeitraum"]);
 
 export function neu(t: string): Stein {
