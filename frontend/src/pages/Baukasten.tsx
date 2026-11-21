@@ -110,6 +110,9 @@ const CSS = `
   border: 2px dashed var(--accent); border-radius: 6px; }
 .bk-slot.ok.over .hit::before { background: var(--accent); color: var(--accent-fg, #fff); border-style: solid; }
 .bk-slot.ok { height: 26px; }
+/* Zusammengesteckt: Noppen weg, Steine sitzen bündig – Noppen und Abstände nur beim Ziehen/Einsetzen */
+.bk-stapel:not(.zieht) .bk-noppen { display: none; }
+.bk-stapel:not(.zieht) .bk-stein, .bk-stapel:not(.zieht) .bk-winkel, .bk-stapel:not(.zieht) .bk-trichter-wrap { margin-top: 0; }
 
 /* Vorschau */
 .bk-vorschau { padding: 12px; min-width: 0; position: sticky; top: 10px; }
@@ -721,7 +724,7 @@ export default function Baukasten() {
                 {kiLaeuft ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />} {kiLaeuft ? "baut …" : "Mit KI bauen"}</button>
               {kiHinweis && <span style={{ flexBasis: "100%", fontSize: 12, color: "var(--text-main)" }}>💡 {kiHinweis}</span>}
             </div>)}
-          <div className="bk-stapel">{stapel(kette, "")}</div>
+          <div className={`bk-stapel${tragen || platzieren ? " zieht" : ""}`}>{stapel(kette, "")}</div>
         </main>
 
         <section className="bk-panel bk-vorschau" aria-label="Vorschau" onClick={(e) => e.stopPropagation()}>
